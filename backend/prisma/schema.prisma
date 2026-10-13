@@ -14,6 +14,20 @@ model User {
   passwordHash String
   createdAt    DateTime    @default(now())
   interviews   Interview[]
+
+  // Profile (all optional; used for display and as interview defaults)
+  headline        String?
+  targetRole      String?
+  specialization  String?
+  /// "student" | "graduate" | "early" | "experienced"
+  experienceLevel String?
+  bio             String?
+  /// Small square avatar (resized in the browser, max ~300 KB), stored in Postgres: no extra storage service.
+  avatar          Bytes?
+  avatarType      String?
+  avatarUpdatedAt DateTime?
+  /// App + interview preferences: theme, uiLanguage, interviewLanguage, difficulty, length, autoPlayVoice, captions, reducedMotion
+  preferences     Json?
 }
 
 model Role {

@@ -8,6 +8,7 @@ import { config } from "./config.js";
 import { errorHandler } from "./middleware/errors.js";
 import { authRouter } from "./routes/auth.js";
 import { interviewsRouter } from "./routes/interviews.js";
+import { profileRouter } from "./routes/profile.js";
 import { metaRouter } from "./routes/meta.js";
 import { ensureDemoAccount, ensureRoles } from "./db/seed-data.js";
 
@@ -23,6 +24,7 @@ app.get("/api/health", (_req, res) => {
 });
 app.use("/api/auth", authRouter);
 app.use("/api/interviews", interviewsRouter);
+app.use("/api/profile", profileRouter);
 app.use("/api", metaRouter);
 app.use("/api", (_req, res) => {
   res.status(404).json({ error: "NOT_FOUND", message: "Not found" });

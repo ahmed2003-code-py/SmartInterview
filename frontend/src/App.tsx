@@ -9,6 +9,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { GuestOnly, RequireAuth } from "@/components/layout/RequireAuth";
 import { Spinner } from "@/components/ui/spinner";
 import { MotionProvider } from "@/lib/motion";
+import { PreferencesProvider } from "@/lib/preferences";
 import Landing from "@/pages/Landing";
 import { LoginPage, RegisterPage } from "@/pages/Auth";
 import NotFound from "@/pages/NotFound";
@@ -16,6 +17,8 @@ import NotFound from "@/pages/NotFound";
 const Dashboard = lazy(() => import("@/pages/Dashboard"));
 const Setup = lazy(() => import("@/pages/Setup"));
 const History = lazy(() => import("@/pages/History"));
+const Profile = lazy(() => import("@/pages/Profile"));
+const Settings = lazy(() => import("@/pages/Settings"));
 const Report = lazy(() => import("@/pages/Report"));
 const InterviewRoom = lazy(() => import("@/pages/InterviewRoom"));
 
@@ -36,6 +39,7 @@ export default function App() {
     <ThemeProvider>
       <I18nProvider>
         <AuthProvider>
+          <PreferencesProvider>
           <TooltipProvider>
             <MotionProvider>
             <BrowserRouter>
@@ -53,6 +57,8 @@ export default function App() {
                       <Route path="/interviews/new" element={<Setup />} />
                       <Route path="/interviews/:id/report" element={<Report />} />
                       <Route path="/history" element={<History />} />
+                      <Route path="/profile" element={<Profile />} />
+                      <Route path="/settings" element={<Settings />} />
                     </Route>
                   </Route>
                   <Route path="*" element={<NotFound />} />
@@ -62,6 +68,7 @@ export default function App() {
             </MotionProvider>
             <Toasts />
           </TooltipProvider>
+          </PreferencesProvider>
         </AuthProvider>
       </I18nProvider>
     </ThemeProvider>

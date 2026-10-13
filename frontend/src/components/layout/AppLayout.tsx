@@ -1,16 +1,13 @@
-import { NavLink, Outlet, useLocation } from "react-router-dom";
-import { History, LayoutGrid, LogOut, Plus } from "lucide-react";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { ChevronDown, History, LayoutGrid, LogOut, Plus, Settings as SettingsIcon, UserRound } from "lucide-react";
+import { Avatar } from "@/components/ui/avatar";
 import { Logo } from "./Logo";
-import { LanguageSwitch, ThemeToggle } from "./Preferences";
+import { LanguageSwitch } from "./Preferences";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/dropdown";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/i18n";
 import { m } from "@/lib/motion";
 import { cn } from "@/lib/utils";
-
-function initials(name: string) {
-  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]).join("").toUpperCase();
-}
 
 export function AppLayout() {
   const { d } = useI18n();
@@ -41,18 +38,44 @@ export function AppLayout() {
           </nav>
           <div className="ms-auto flex items-center gap-1">
             <LanguageSwitch />
-            <ThemeToggle />
             <Menu>
               <MenuTrigger asChild>
-                <button className="press ms-1 grid size-8 place-items-center rounded-full bg-ink text-[11px] font-semibold text-ink-fg outline-none focus-visible:ring-3 focus-visible:ring-primary/30" aria-label={d.nav.menu}>
-                  {user ? initials(user.name) : ""}
+                <button
+                  className="press ms-1 flex items-center gap-2 rounded-full p-0.5 outline-none transition-colors hover:bg-surface-2 focus-visible:ring-3 focus-visible:ring-primary/30 md:py-1 md:ps-1 md:pe-2.5"
+                  aria-label={d.nav.account}
+                >
+                  <Avatar user={user} className="size-8 text-[13px]" />
+                  <span className="hidden max-w-32 truncate text-sm font-medium md:inline" dir="auto">
+                    {user?.name.split(" ")[0]}
+                  </span>
+                  <ChevronDown className="hidden size-3.5 text-subtle md:block" />
                 </button>
               </MenuTrigger>
-              <MenuContent className="w-56">
+              <MenuContent className="w-60">
                 <MenuLabel>
-                  <span className="block truncate text-sm font-medium text-fg">{user?.name}</span>
-                  <span className="block truncate">{user?.email}</span>
+                  <span className="flex items-center gap-3 py-1">
+                    <Avatar user={user} className="size-9 text-sm" />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-fg" dir="auto">
+                        {user?.name}
+                      </span>
+                      <span className="block truncate" dir="ltr">
+                        {user?.email}
+                      </span>
+                    </span>
+                  </span>
                 </MenuLabel>
+                <MenuSeparator />
+                <MenuItem asChild>
+                  <Link to="/profile">
+                    <UserRound /> {d.nav.profile}
+                  </Link>
+                </MenuItem>
+                <MenuItem asChild>
+                  <Link to="/settings">
+                    <SettingsIcon /> {d.nav.settings}
+                  </Link>
+                </MenuItem>
                 <MenuSeparator />
                 <MenuItem onSelect={() => logout()}>
                   <LogOut className="rtl:-scale-x-100" /> {d.common.logout}

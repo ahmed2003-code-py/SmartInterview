@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/states";
 import { InterviewList } from "@/features/dashboard/InterviewList";
 import { ScoreTrend, type TrendPoint } from "@/features/dashboard/ScoreTrend";
-import { ScoreBars } from "@/features/report/ScoreBars";
+import { CRITERIA_ORDER, ScoreBars } from "@/features/report/ScoreBars";
 import { useFetch } from "@/hooks/useFetch";
 import { api, type Criterion, type InterviewSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -91,6 +91,11 @@ export default function Dashboard() {
   const inProgress = data?.recent.find((i) => i.status === "IN_PROGRESS");
   const isEmpty = !loading && data && data.recent.length === 0;
   const lastChange = data?.recent.find((i) => i.status === "COMPLETED")?.change;
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? d.dashboard.greetMorning : hour < 18 ? d.dashboard.greetAfternoon : d.dashboard.greetEvening;
+  // One deterministic recommendation: the lowest average skill (only with real data and a real gap).
+  const lowest = data?.skills ? CRITERIA_ORDER.reduce((a, b) => (data.skills![b] < data.skills![a] ? b : a)) : null;
+  const weakest = lowest && Math.max(...CRITERIA_ORDER.map((c) => data!.skills![c])) - data!.skills![lowest] >= 5 ? lowest : null;
   const subtitle =
     lastChange != null && lastChange > 0 ? fmt(d.dashboard.subtitleUp, { n: lastChange }) : data?.totalInterviews === 1 ? d.dashboard.subtitleFirst : d.dashboard.subtitle;
 
@@ -98,8 +103,14 @@ export default function Dashboard() {
     <div>
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
-          <h1 className="t-page text-balance">{fmt(isEmpty ? d.dashboard.welcomeNew : d.dashboard.welcome, { name: firstName })}</h1>
+          <h1 className="t-page text-balance">{fmt(isEmpty ? d.dashboard.welcomeNew : greeting, { name: firstName })}</h1>
           {!isEmpty && <p className="mt-1.5 text-[15px] text-muted">{loading ? " " : subtitle}</p>}
+          {!loading && user && !user.targetRole && (
+            <Link to="/profile" className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+              {d.dashboard.recoProfile}
+              <ArrowRight className="size-3.5 rtl:-scale-x-100" />
+            </Link>
+          )}
         </div>
         {!isEmpty && (
           <Button asChild size="lg" className="max-sm:hidden">
@@ -187,7 +198,19 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : data.skills ? (
-                <ScoreBars scores={data.skills} compact />
+                <>
+                  <ScoreBars scores={data.skills} compact />
+                  {weakest && (
+                    <div className="mt-5 border-t border-border pt-4">
+                      <p className="text-sm font-medium">{fmt(d.dashboard.recoWeakest, { skill: d.criteria[weakest] })}</p>
+                      <p className="t-caption mt-0.5">{d.dashboard.recoWeakestBody}</p>
+                      <Link to="/interviews/new" className="mt-2.5 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                        {d.dashboard.recoAction}
+                        <ArrowRight className="size-3.5 rtl:-scale-x-100" />
+                      </Link>
+                    </div>
+                  )}
+                </>
               ) : (
                 <p className="text-sm text-muted">{d.dashboard.trendOne}</p>
               )}

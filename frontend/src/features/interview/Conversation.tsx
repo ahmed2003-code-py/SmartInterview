@@ -35,8 +35,6 @@ export function AiOrb({ speaking, thinking, size = "md", className }: { speaking
   );
 }
 
-/** Kept for places that only need the avatar. */
-export const InterviewerAvatar = AiOrb;
 
 /** A question from the interviewer. The current one is emphasized with an accent edge; earlier ones recede. */
 export function AiMessage(props: {
@@ -120,7 +118,6 @@ export function StudentMessage(props: { state: StudentState; text?: string; reco
               </span>
             </span>
           )}
-          {props.state === "transcribing" && <span className="animate-shimmer rounded px-1 text-muted">{d.room.transcribingMsg}</span>}
         </div>
 
         {live ? (

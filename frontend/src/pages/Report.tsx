@@ -8,6 +8,7 @@ import { EmptyState, ErrorState } from "@/components/ui/states";
 import { ExpandableText } from "@/components/ui/expandable-text";
 import { ScoreBars, CRITERIA_ORDER } from "@/features/report/ScoreBars";
 import { ScoreRing } from "@/features/viz/ScoreRing";
+import { practiceAgainHref } from "@/features/dashboard/InterviewList";
 import { Delta } from "@/features/viz/Delta";
 import { useFetch } from "@/hooks/useFetch";
 import { api, type InterviewDTO, type QuestionDTO } from "@/lib/api";
@@ -178,14 +179,6 @@ function ReportBody({ interview: i }: { interview: InterviewDTO }) {
   const r = i.report;
   const band = scoreBand(r.overallScore);
   const answered = i.questions.filter((q) => q.answer);
-  const againParams = new URLSearchParams({
-    ...(i.role.id ? { role: i.role.id } : { roleTitle: i.role.nameEn }),
-    ...(i.specialization ? { spec: i.specialization } : {}),
-    lang: i.language,
-    ...(i.languageMode === "smart" ? { mode: "smart" } : {}),
-    difficulty: i.difficulty,
-    length: i.length,
-  });
   const bandTone = band === "excellent" || band === "good" ? "text-success" : band === "fair" ? "text-warning" : "text-danger";
   const delta = i.previousScore != null ? r.overallScore - i.previousScore : null;
 
@@ -226,7 +219,7 @@ function ReportBody({ interview: i }: { interview: InterviewDTO }) {
             </p>
           </div>
           <Button asChild variant="secondary" className="self-center sm:self-start">
-            <Link to={`/interviews/new?${againParams}`}>
+            <Link to={practiceAgainHref(i)}>
               <RotateCcw className="size-4" />
               {d.report.practiceAgain}
             </Link>

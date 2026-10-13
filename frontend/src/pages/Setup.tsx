@@ -8,9 +8,12 @@ import { Spinner } from "@/components/ui/spinner";
 import { ErrorState } from "@/components/ui/states";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { RoleCombobox, type RoleTarget } from "@/features/setup/RoleCombobox";
+import { Segmented } from "@/components/ui/segmented";
 import { useFetch } from "@/hooks/useFetch";
 import { api, ApiError, type Difficulty, type InterviewDTO, type Length, type Role } from "@/lib/api";
 import { useI18n, type Lang } from "@/i18n";
+import { useAuth } from "@/lib/auth";
+import { usePreferences } from "@/lib/preferences";
 import { AnimatePresence, m } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
@@ -42,30 +45,6 @@ function Field({ label, optional, hint, children, htmlFor }: { label: string; op
       </label>
       {children}
       {hint && <p className="t-caption mt-2">{hint}</p>}
-    </div>
-  );
-}
-
-/** Segmented control with a sliding selection pill. */
-function Segmented<T extends string>({ value, onChange, options, label, id }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label: string; id: string }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="grid w-full auto-cols-fr grid-flow-col rounded-xl bg-surface-2 p-1 sm:inline-grid sm:w-auto">
-      {options.map((o) => {
-        const on = value === o.value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            role="radio"
-            aria-checked={on}
-            onClick={() => onChange(o.value)}
-            className={cn("relative h-9 rounded-lg px-4 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-primary/25", on ? "font-medium text-fg" : "text-muted hover:text-fg")}
-          >
-            {on && <m.span layoutId={`seg-${id}`} className="absolute inset-0 rounded-lg bg-surface shadow-sm ring-1 ring-border" transition={{ type: "spring", bounce: 0.15, duration: 0.35 }} />}
-            <span className="relative">{o.label}</span>
-          </button>
-        );
-      })}
     </div>
   );
 }
@@ -182,25 +161,32 @@ export default function Setup() {
   const [params] = useSearchParams();
   const roles = useFetch(() => api.get<{ roles: Role[] }>("/roles"), []);
 
+  // Defaults: "Practice again" link > profile (target role, specialization) > settings (interview defaults).
+  const { user } = useAuth();
+  const { prefs } = usePreferences();
+  const fromLink = params.has("role") || params.has("roleTitle");
   const [target, setTarget] = useState<RoleTarget | null>(() => {
-    const title = params.get("roleTitle");
+    const title = params.get("roleTitle") ?? (fromLink ? null : user?.targetRole);
     return title ? { roleId: null, title } : null;
   });
-  const [specialization, setSpecialization] = useState(params.get("spec") ?? "");
+  const [specialization, setSpecialization] = useState(params.get("spec") ?? (fromLink ? "" : (user?.specialization ?? "")));
   // "smart" = bilingual: starts in the UI language, then the interviewer follows the student.
-  const [language, setLanguage] = useState<Lang | "smart">((params.get("mode") === "smart" ? "smart" : (params.get("lang") as Lang)) || lang);
-  const [difficulty, setDifficulty] = useState<Difficulty>((params.get("difficulty") as Difficulty) || "beginner");
-  const [length, setLength] = useState<Length>((params.get("length") as Length) || "quick");
+  const [language, setLanguage] = useState<Lang | "smart">((params.get("mode") === "smart" ? "smart" : (params.get("lang") as Lang)) || prefs.interviewLanguage || lang);
+  const [difficulty, setDifficulty] = useState<Difficulty>((params.get("difficulty") as Difficulty) || prefs.difficulty || "beginner");
+  const [length, setLength] = useState<Length>((params.get("length") as Length) || prefs.length || "quick");
   const [jdOpen, setJdOpen] = useState(false);
   const [jd, setJd] = useState("");
   const [cv, setCv] = useState<CvState>({ status: "idle" });
   const [busy, setBusy] = useState(false);
 
-  // "Practice again" with a suggested role: preselect it once suggestions load.
+  // Once suggestions load: preselect a "Practice again" role, or link a profile target role to its suggestion.
   const presetRole = params.get("role");
   useEffect(() => {
-    const r = roles.data?.roles.find((x) => x.id === presetRole);
-    if (r && !target) setTarget({ roleId: r.id, title: lang === "ar" ? r.nameAr : r.nameEn });
+    const list = roles.data?.roles ?? [];
+    const byId = list.find((x) => x.id === presetRole);
+    const byName = target && !target.roleId ? list.find((x) => x.nameEn.toLowerCase() === target.title.toLowerCase() || x.nameAr === target.title) : undefined;
+    const r = byId ?? byName;
+    if (r && (!target || !target.roleId)) setTarget({ roleId: r.id, title: lang === "ar" ? r.nameAr : r.nameEn });
   }, [roles.data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const selectedRole = roles.data?.roles.find((r) => r.id === target?.roleId);

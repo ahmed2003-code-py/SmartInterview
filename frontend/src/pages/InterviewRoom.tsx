@@ -9,7 +9,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/states";
 import { LogoMark } from "@/components/layout/Logo";
-import { ThemeToggle } from "@/components/layout/Preferences";
 import { Waveform } from "@/features/interview/Waveform";
 import { AiMessage, AiOrb, StudentMessage } from "@/features/interview/Conversation";
 import { useInterviewerVoice } from "@/hooks/useInterviewerVoice";
@@ -19,6 +18,7 @@ import { api, ApiError, type AppConfig, type InterviewDTO, type QuestionDTO } fr
 import { I18nOverride, useI18n } from "@/i18n";
 import { clockTime, cn, textDir } from "@/lib/utils";
 import { AnimatePresence, m } from "@/lib/motion";
+import { usePreferences } from "@/lib/preferences";
 
 /**
  * READY → AI_SPEAKING → WAITING_FOR_USER → RECORDING → TRANSCRIBING → ANALYZING → AI_SPEAKING …
@@ -62,6 +62,10 @@ function reportTiming() {
 }
 
 const SILENCE_PEAK = 0.012;
+// Transcription normally takes 1-3s. After STT_SLOW_MS we say so; after STT_TIMEOUT_MS we stop waiting
+// and offer Retry with the same recording (the server bounds its own provider calls well below this).
+const STT_SLOW_MS = 8_000;
+const STT_TIMEOUT_MS = 45_000;
 const MIN_VOICED_SEC = 0.4;
 
 /** Loads the interview, then runs the room in the interview's own language (Arabic interview = Arabic RTL room). */
@@ -140,6 +144,7 @@ function Room({
   const navigate = useNavigate();
   const location = useLocation();
   const { d, fmt, lang } = useI18n(); // the interview's language
+  const { prefs } = usePreferences();
 
   const [phase, setPhase] = useState<Phase>("READY");
   const [error, setError] = useState<RoomError | null>(null);
@@ -147,6 +152,7 @@ function Room({
   const [typed, setTyped] = useState("");
   const [inputMode, setInputMode] = useState<"voice" | "text">(recordingSupported ? "voice" : "text");
   const [slowAnalysis, setSlowAnalysis] = useState(false);
+  const [slowStt, setSlowStt] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -176,6 +182,13 @@ function Room({
     return () => window.clearInterval(t);
   }, [phase]);
 
+  // Honest "still working" notice after a real wait (no fake progress).
+  useEffect(() => {
+    if (phase !== "TRANSCRIBING") return setSlowStt(false);
+    const t = window.setTimeout(() => setSlowStt(true), STT_SLOW_MS);
+    return () => window.clearTimeout(t);
+  }, [phase]);
+
   useEffect(() => {
     if (phase !== "ANALYZING") return setSlowAnalysis(false);
     const t = window.setTimeout(() => setSlowAnalysis(true), 3500);
@@ -193,13 +206,15 @@ function Room({
   const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.code === "NETWORK_ERROR" ? d.room.errors.network : fallback);
 
   const ask = useCallback(
-    async (q: QuestionDTO) => {
+    async (q: QuestionDTO, force = false) => {
+      // "Read questions aloud" off: the question is shown as text; Replay still plays it on demand.
+      if (!prefs.autoPlayVoice && !force) return setPhase("WAITING_FOR_USER");
       setPhase("AI_SPEAKING");
       await voice.speak({ id: q.id, text: q.text, language: q.language ?? interview.language });
       // Only advance if nothing else (e.g. End interview) changed the phase meanwhile.
       setPhase((p) => (p === "AI_SPEAKING" ? "WAITING_FOR_USER" : p));
     },
-    [voice],
+    [voice, prefs.autoPlayVoice], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   async function finish() {
@@ -277,16 +292,24 @@ function Room({
     if (Number.isFinite(rec.voicedSec)) form.append("voicedSec", rec.voicedSec.toFixed(2));
     form.append("durationSec", String(rec.durationSec));
     let transcript: string;
+    // One trace id per attempt, so a slow answer can be found in the server log (no content is logged).
+    const traceId = (crypto.randomUUID?.() ?? String(Math.random()).slice(2)).slice(0, 8);
     try {
-      ({ transcript } = await api.post<{ transcript: string }>(`/interviews/${id}/transcribe`, form));
+      ({ transcript } = await api.post<{ transcript: string }>(`/interviews/${id}/transcribe`, form, {
+        signal: AbortSignal.timeout(STT_TIMEOUT_MS),
+        headers: { "X-Trace-Id": traceId },
+      }));
     } catch (err) {
       sttBusyRef.current = false;
       setPhase("WAITING_FOR_USER");
-      // Nothing is submitted; the student records again (or retries the same audio).
+      if (DEBUG_TIMING) console.info(`[stt] trace=${traceId} failed`, err instanceof ApiError ? err.code : err);
+      // Nothing is submitted. Retry re-sends the same recording; the student never has to re-record.
       if (err instanceof ApiError && err.code === "NO_SPEECH") setError({ message: d.room.errors.noSpeech });
+      else if (err instanceof ApiError && err.code === "TIMEOUT") setError({ message: d.room.errors.sttSlow, retry: () => transcribe(rec) });
       else setError({ message: errorText(err, d.room.errors.sttFailed), retry: () => transcribe(rec) });
       return;
     }
+    if (DEBUG_TIMING) console.info(`[stt] trace=${traceId} bytes=${rec.blob.size} type=${rec.blob.type} clientSec=${rec.durationSec}`);
     sttBusyRef.current = false;
     mark("sttDone");
     caption.clear();
@@ -319,7 +342,7 @@ function Room({
     const lastAnswer = interview.questions.filter((q) => q.answer).at(-1)?.answer?.transcript;
     const captionLang =
       interview.languageMode === "smart" && lastAnswer ? (textDir(lastAnswer) === "ltr" ? "en" : "ar") : (currentQuestion?.language ?? interview.language) === "en" ? "en" : "ar";
-    caption.start(captionLang);
+    if (prefs.captions) caption.start(captionLang);
   }
 
   // "Done" sits where the mic button was: a double-tap on the mic must not stop the recording it just started.
@@ -347,7 +370,7 @@ function Room({
 
   function repeat() {
     if (!currentQuestion || phase !== "WAITING_FOR_USER") return;
-    ask(currentQuestion);
+    ask(currentQuestion, true);
   }
 
   async function endInterview() {
@@ -389,7 +412,14 @@ function Room({
   const roleName = lang === "ar" ? interview.role.nameAr : interview.role.nameEn;
   const questionNumber = Math.min(currentQuestion?.order ?? interview.questions.length, interview.maxQuestions);
   const elapsed = Math.max(0, Math.floor((now - new Date(interview.startedAt).getTime()) / 1000));
-  const statusKey = error?.retry && phase !== "AI_SPEAKING" && phase !== "RECORDING" ? "ERROR" : phase === "ANALYZING" && slowAnalysis ? "PREPARING" : phase;
+  const statusKey =
+    error?.retry && phase !== "AI_SPEAKING" && phase !== "RECORDING"
+      ? "ERROR"
+      : phase === "ANALYZING" && slowAnalysis
+        ? "PREPARING"
+        : phase === "TRANSCRIBING" && slowStt
+          ? "TRANSCRIBING_SLOW"
+          : phase;
   const done = phase === "DONE";
 
   return (
@@ -430,9 +460,6 @@ function Room({
             <span className="hidden px-1 text-xs text-subtle tabular-nums sm:inline" dir="ltr">
               {clockTime(elapsed)}
             </span>
-            <div className="hidden lg:block">
-              <ThemeToggle />
-            </div>
             {!done && (
               <Dialog>
                 <DialogTrigger asChild>

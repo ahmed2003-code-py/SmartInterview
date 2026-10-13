@@ -5,6 +5,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LazyMotion, MotionConfig, useInView, type Variants } from "motion/react";
+import { usePreferences } from "./preferences";
 import * as m from "motion/react-m";
 
 export { m };
@@ -16,10 +17,11 @@ export const DUR = { fast: 0.15, base: 0.25, slow: 0.35 } as const;
 const loadFeatures = () => import("./motion-features").then((r) => r.default);
 
 export function MotionProvider({ children }: { children: ReactNode }) {
+  const { prefs } = usePreferences();
   return (
     // Features load asynchronously so the first paint doesn't wait for the animation engine.
     <LazyMotion features={loadFeatures} strict>
-      <MotionConfig reducedMotion="user" transition={{ duration: DUR.base, ease: EASE }}>
+      <MotionConfig reducedMotion={prefs.reducedMotion === "reduce" ? "always" : "user"} transition={{ duration: DUR.base, ease: EASE }}>
         {children}
       </MotionConfig>
     </LazyMotion>
@@ -27,7 +29,8 @@ export function MotionProvider({ children }: { children: ReactNode }) {
 }
 
 export function prefersReducedMotion() {
-  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (typeof window === "undefined") return false;
+  return document.documentElement.dataset.motion === "reduce" || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 }
 
 /** Fade + small rise. */

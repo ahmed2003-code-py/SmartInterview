@@ -16,7 +16,8 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...init,
       headers: init.body instanceof FormData ? init.headers : { "Content-Type": "application/json", ...init.headers },
     });
-  } catch {
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === "AbortError" || err.name === "TimeoutError")) throw new ApiError(0, "TIMEOUT", "Request timed out");
     throw new ApiError(0, "NETWORK_ERROR", "Network error");
   }
   const data = await res.json().catch(() => ({}));
@@ -26,14 +27,39 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 export const api = {
   get: <T>(path: string) => request<T>(path),
-  post: <T>(path: string, body?: unknown) => request<T>(path, { method: "POST", body: body instanceof FormData ? body : JSON.stringify(body ?? {}) }),
+  post: <T>(path: string, body?: unknown, init: Pick<RequestInit, "signal" | "headers"> = {}) =>
+    request<T>(path, { ...init, method: "POST", body: body instanceof FormData ? body : JSON.stringify(body ?? {}) }),
+  patch: <T>(path: string, body: unknown) => request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
+  del: <T>(path: string) => request<T>(path, { method: "DELETE" }),
 };
 
 // ---- Shared API types ----
+export type ExperienceLevel = "student" | "graduate" | "early" | "experienced";
+
+export interface Preferences {
+  theme?: "light" | "dark" | "system";
+  uiLanguage?: "ar" | "en";
+  interviewLanguage?: "ar" | "en" | "smart";
+  difficulty?: Difficulty;
+  length?: Length;
+  autoPlayVoice?: boolean;
+  captions?: boolean;
+  reducedMotion?: "system" | "reduce";
+}
+
 export interface User {
   id: string;
   name: string;
   email: string;
+  createdAt: string;
+  headline: string | null;
+  targetRole: string | null;
+  specialization: string | null;
+  experienceLevel: ExperienceLevel | null;
+  bio: string | null;
+  /** Changes whenever the photo changes; null = no photo (initials are shown). */
+  avatarVersion: number | null;
+  preferences: Preferences;
 }
 
 /** A suggested role from the server (quick option in setup). */

@@ -104,7 +104,7 @@ export default function History() {
             }
           />
         ) : (
-          <InterviewList items={items} />
+          <InterviewList items={items} practiceAgain />
         )}
       </div>
     </div>

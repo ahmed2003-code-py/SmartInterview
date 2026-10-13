@@ -332,6 +332,10 @@ div[lang] {
   transition: background-color 0.22s ease, border-color 0.22s ease, color 0.22s ease, fill 0.22s ease !important;
 }
 
+/* Reduced motion: the system setting, or the account setting (html[data-motion=reduce]). */
+[data-motion="reduce"],
+[data-motion="reduce"] * { scroll-behavior: auto !important; }
+[data-motion="reduce"] *, [data-motion="reduce"] *::before, [data-motion="reduce"] *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }

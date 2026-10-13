@@ -16,7 +16,20 @@ export interface TranscribeContext {
   question?: string;
   /** Client-measured recording length, for debug logs only. */
   durationSec?: number;
+  /** Cancels the call (e.g. the other provider already answered). */
+  signal?: AbortSignal;
+  /** Filled by the providers: one entry per attempt (timings and outcome only, never audio or text). */
+  trace?: STTAttempt[];
 }
+
+export interface STTAttempt {
+  provider: string;
+  ms: number;
+  outcome: "ok" | "empty" | "error" | "timeout" | "skipped" | "cancelled";
+  detail?: string;
+}
+
+const record = (ctx: TranscribeContext | undefined, a: STTAttempt) => ctx?.trace?.push(a);
 
 export interface STTProvider {
   name: string;
@@ -120,7 +133,7 @@ export function whisperPrompt(language: Lang, roleSlug?: string, ctx?: Pick<Tran
     : `This is a student's answer in a practice interview${education ? " for a teaching job" : ""}. Terms may include: ${terms}.`;
 }
 
-async function callWhisper(audio: Buffer, mimeType: string, prompt: string, forceLanguage?: Lang): Promise<VerboseTranscription> {
+async function callWhisper(audio: Buffer, mimeType: string, prompt: string, forceLanguage?: Lang, signal?: AbortSignal, timeoutMs = 25_000): Promise<VerboseTranscription> {
   const form = new FormData();
   form.append("file", new Blob([new Uint8Array(audio)], { type: mimeType }), `answer.${extFor(mimeType)}`);
   form.append("model", config.stt.groqModel);
@@ -130,19 +143,20 @@ async function callWhisper(audio: Buffer, mimeType: string, prompt: string, forc
   form.append("prompt", prompt);
   let res: Response;
   try {
-    res = await fetchWithRateLimitRetry("https://api.groq.com/openai/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${config.stt.groqApiKey}` },
-      body: form,
-      signal: AbortSignal.timeout(45_000),
-    });
+    // A student is waiting: wait at most 2s on a rate limit and give up after a bounded time.
+    res = await fetchWithRateLimitRetry(
+      "https://api.groq.com/openai/v1/audio/transcriptions",
+      { method: "POST", headers: { Authorization: `Bearer ${config.stt.groqApiKey}` }, body: form, signal: AbortSignal.any([AbortSignal.timeout(timeoutMs), ...(signal ? [signal] : [])]) },
+      2,
+    );
   } catch (err) {
-    console.error("STT network error", err instanceof Error ? err.message : err);
-    throw new HttpError(502, "STT_FAILED", "Could not reach the transcription service");
+    const timeout = err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+    if (!timeout) console.error("STT network error", err instanceof Error ? err.message : err);
+    throw new HttpError(timeout ? 504 : 502, timeout ? "STT_TIMEOUT" : "STT_FAILED", "Could not reach the transcription service");
   }
   if (!res.ok) {
-    console.error("STT error", res.status, (await res.text()).slice(0, 300));
-    throw new HttpError(502, "STT_FAILED", "Transcription failed");
+    console.error("STT error", res.status, (await res.text()).slice(0, 200).replace(/\s+/g, " "));
+    throw new HttpError(502, "STT_FAILED", `Transcription failed (${res.status})`);
   }
   return (await res.json()) as VerboseTranscription;
 }
@@ -162,11 +176,29 @@ export const groqWhisper: STTProvider = {
   async transcribe(audio, mimeType, language, ctx) {
     const prompt = whisperPrompt(language, ctx?.roleSlug, ctx);
     const t0 = Date.now();
-    let result = await callWhisper(audio, mimeType, prompt);
-    const detected = (result.language ?? "").toLowerCase();
-    const plausible = !detected || detected.startsWith("arab") || detected.startsWith("engl") || detected === "ar" || detected === "en";
-    if (!plausible) result = await callWhisper(audio, mimeType, prompt, language);
+    const timeoutMs = Math.round(Math.min(30_000, 15_000 + audio.length / 40)); // ~15s + 0.2s per audio second
+    let result: VerboseTranscription;
+    let detected = "";
+    let plausible = true;
+    try {
+      result = await callWhisper(audio, mimeType, prompt, undefined, ctx?.signal, timeoutMs);
+      detected = (result.language ?? "").toLowerCase();
+      plausible = !detected || detected.startsWith("arab") || detected.startsWith("engl") || detected === "ar" || detected === "en";
+      if (!plausible) result = await callWhisper(audio, mimeType, prompt, language, ctx?.signal, timeoutMs);
+    } catch (err) {
+      const code = err instanceof HttpError ? err.code : "error";
+      record(ctx, { provider: "groq", ms: Date.now() - t0, outcome: ctx?.signal?.aborted ? "cancelled" : code === "STT_TIMEOUT" ? "timeout" : "error", detail: err instanceof Error ? err.message.slice(0, 60) : undefined });
+      throw err;
+    }
     const text = cleanTranscription(result, prompt);
+    const segs = result.segments ?? [];
+    record(ctx, {
+      provider: "groq",
+      ms: Date.now() - t0,
+      outcome: text ? "ok" : "empty",
+      // Why an answer was rejected, without its content: detected language, segment counts, confidence.
+      detail: `lang=${detected || "?"}${plausible ? "" : "->forced"} segs=${segs.length} rawChars=${(result.text ?? "").trim().length} lp=${segs.length ? (segs.reduce((a, x) => a + (x.avg_logprob ?? 0), 0) / segs.length).toFixed(2) : "?"}`,
+    });
     if (config.stt.debug) {
       // Metadata only, never the audio or the transcript text.
       const segs = result.segments ?? [];
@@ -222,20 +254,30 @@ export function geminiProvider(model = config.stt.geminiModel): STTProvider {
         generationConfig,
       };
       let res: Response;
+      const timeoutMs = Math.round(Math.min(25_000, 12_000 + audio.length / 40));
+      const signals = [AbortSignal.timeout(timeoutMs), ...(ctx?.signal ? [ctx.signal] : [])];
       try {
         // No waiting on 429/503 here: failing fast lets the fallback provider (Groq) answer right away.
         res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
           method: "POST",
           headers: { "x-goog-api-key": config.stt.geminiApiKey, "Content-Type": "application/json" },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(20_000),
+          signal: AbortSignal.any(signals),
         });
       } catch (err) {
-        console.error("Gemini STT network error", err instanceof Error ? err.message : err);
-        throw new HttpError(502, "STT_FAILED", "Could not reach the transcription service");
+        const cancelled = ctx?.signal?.aborted;
+        const timeout = !cancelled && err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+        record(ctx, { provider: "gemini", ms: Date.now() - t0, outcome: cancelled ? "cancelled" : timeout ? "timeout" : "error" });
+        if (!timeout && !cancelled) console.error("Gemini STT network error", err instanceof Error ? err.message : err);
+        throw new HttpError(timeout ? 504 : 502, timeout ? "STT_TIMEOUT" : "STT_FAILED", "Could not reach the transcription service");
       }
       if (!res.ok) {
-        console.error("Gemini STT error", res.status, (await res.text()).slice(0, 160).replace(/\s+/g, " "));
+        const body = (await res.text()).slice(0, 4000);
+        // Free-tier quotas: per-day exhaustion pauses Gemini for hours, per-minute for a minute.
+        const daily = res.status === 429 && /PerDay/i.test(body);
+        geminiPausedUntil = Date.now() + (daily ? 3 * 3600_000 : res.status === 429 ? 60_000 : res.status >= 500 ? 30_000 : 0);
+        record(ctx, { provider: "gemini", ms: Date.now() - t0, outcome: "error", detail: `${res.status}${daily ? "-daily-quota" : ""}` });
+        if (!daily) console.error("Gemini STT error", res.status, body.slice(0, 160).replace(/\s+/g, " "));
         throw new HttpError(502, "STT_FAILED", "Transcription failed");
       }
       const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
@@ -247,6 +289,7 @@ export function geminiProvider(model = config.stt.geminiModel): STTProvider {
       // Formatting only: never change words.
       let text = raw.replace(/^["“”']+|["“”']+$/g, "").replace(/\s+/g, " ").trim();
       if (/^\[?NO_SPEECH\]?$/i.test(text) || !/\p{L}/u.test(text) || isHallucination(text)) text = "";
+      record(ctx, { provider: "gemini", ms: Date.now() - t0, outcome: text ? "ok" : "empty", detail: `rawChars=${raw.length}` });
       if (config.stt.debug) console.log(`[stt] provider=gemini model=${model} lang=${language} bytes=${audio.length} chars=${text.length} rejected=${!text} ms=${Date.now() - t0}`);
       return text;
     },
@@ -261,10 +304,18 @@ const mock: STTProvider = {
   },
 };
 
+/** Gemini free tier has small quotas; while it is out of quota we don't spend a round trip on it. */
+let geminiPausedUntil = 0;
+
 /**
- * Selected by STT_PROVIDER (groq | gemini). If the primary provider fails (after its own retry),
- * the other one is tried once when its key is configured. An empty result ("no speech") is not a
- * failure and is not retried elsewhere.
+ * Selected by STT_PROVIDER (groq | gemini), with the other provider as fallback when its key exists.
+ *
+ * Latency is bounded for the student:
+ * - a primary that is known to be out of quota is skipped (no wasted round trip);
+ * - if the primary errors, the fallback runs immediately;
+ * - if the primary is slow (no answer after a hedge delay that grows with the audio length), the
+ *   fallback starts in parallel and the first usable transcript wins; the slower call is cancelled.
+ * An empty result ("no speech") from the provider that answers first is accepted, not retried.
  */
 export function getSTT(): STTProvider {
   if (config.mockAI) return mock;
@@ -274,14 +325,44 @@ export function getSTT(): STTProvider {
   if (!primary) return groqWhisper;
   return {
     name: primary.name,
-    async transcribe(audio, mimeType, language, ctx) {
-      try {
-        return await primary.transcribe(audio, mimeType, language, ctx);
-      } catch (err) {
-        if (!fallback) throw err;
-        console.warn(`STT ${primary.name} failed; using fallback ${fallback.name}`);
+    async transcribe(audio, mimeType, language, ctx = {}) {
+      const isGemini = (p: STTProvider) => p.name.startsWith("gemini");
+      if (fallback && isGemini(primary) && Date.now() < geminiPausedUntil) {
+        record(ctx, { provider: "gemini", ms: 0, outcome: "skipped", detail: "quota-pause" });
         return fallback.transcribe(audio, mimeType, language, ctx);
       }
+      if (!fallback) return primary.transcribe(audio, mimeType, language, ctx);
+
+      const primaryAbort = new AbortController();
+      const fallbackAbort = new AbortController();
+      const hedgeMs = Math.round(4_000 + audio.length / 160); // ~4s + 50ms per audio second (8 KB/s opus)
+      return new Promise<string>((resolve, reject) => {
+        let settled = false;
+        let fallbackStarted = false;
+        let failures = 0;
+        const done = (fn: () => void) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(hedge);
+          fn();
+        };
+        const startFallback = () => {
+          if (fallbackStarted || settled) return;
+          fallbackStarted = true;
+          fallback
+            .transcribe(audio, mimeType, language, { ...ctx, signal: fallbackAbort.signal })
+            .then((t) => done(() => { primaryAbort.abort(); resolve(t); }))
+            .catch((e) => (++failures === 2 ? done(() => reject(e)) : undefined));
+        };
+        const hedge = setTimeout(startFallback, hedgeMs);
+        primary
+          .transcribe(audio, mimeType, language, { ...ctx, signal: primaryAbort.signal })
+          .then((t) => done(() => { fallbackAbort.abort(); resolve(t); }))
+          .catch((e) => {
+            if (++failures === 2) return done(() => reject(e));
+            startFallback();
+          });
+      });
     },
   };
 }

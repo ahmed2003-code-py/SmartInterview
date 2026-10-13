@@ -1,11 +1,12 @@
-import { Router } from "express";
+import { Router, type RequestHandler } from "express";
+import { randomUUID } from "node:crypto";
 import multer from "multer";
 import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { config } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
 import { HttpError } from "../middleware/errors.js";
-import { getSTT, type Lang } from "../providers/stt.js";
+import { getSTT, type Lang, type STTAttempt } from "../providers/stt.js";
 import { streamQuestionAudio, ttsConfigured } from "../providers/tts.js";
 import { buildCvProfile, CV_MAX_BYTES } from "../services/cv.js";
 import * as interviews from "../services/interviews.js";
@@ -78,28 +79,51 @@ interviewsRouter.get("/:id", async (req, res) => {
   res.json({ interview: await interviews.getInterview(req.userId!, req.params.id) });
 });
 
-interviewsRouter.post("/:id/transcribe", aiLimiter, upload.single("audio"), async (req, res) => {
-  const interview = await interviews.assertActive(req.userId!, req.params.id as string);
-  if (!req.file) throw new HttpError(400, "NO_AUDIO", "No audio received");
-  if (!looksLikeAudio(req.file.buffer)) throw new HttpError(400, "INVALID_AUDIO", "Unsupported audio format");
-  // The browser measures how long the student actually spoke; skip paid STT for silent clips.
-  const voicedSec = Number(req.body?.voicedSec);
-  if (Number.isFinite(voicedSec) && voicedSec < 0.3) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
-  const durationSec = Number(req.body?.durationSec);
+const markStart: RequestHandler = (_req, res, next) => {
+  res.locals.t0 = Date.now();
+  next();
+};
+
+interviewsRouter.post("/:id/transcribe", markStart, aiLimiter, upload.single("audio"), async (req, res) => {
+  // One safe log line per answer: timings, sizes and outcomes only (never audio, transcript or keys).
+  const traceId = String(req.get("x-trace-id") ?? "").replace(/[^a-zA-Z0-9-]/g, "").slice(0, 40) || randomUUID().slice(0, 8);
+  const parseMs = Date.now() - (res.locals.t0 as number);
+  const trace: STTAttempt[] = [];
   const t0 = Date.now();
-  const stt = getSTT();
-  const text = await stt.transcribe(req.file.buffer, req.file.mimetype, interview.language as Lang, {
-    roleSlug: interview.role?.slug,
-    // Latin-script words of a typed role / specialization help STT keep them in English.
-    roleTerms: [interview.roleTitle, interview.specialization].filter((t) => t && /[A-Za-z]/.test(t)).join(", ") || undefined,
-    education: interview.role ? interview.role.domain === "education" : false,
-    question: interview.questions[0]?.text,
-    durationSec: Number.isFinite(durationSec) ? durationSec : undefined,
-  });
-  // Development timing (standard header; not shown to students).
-  res.set("Server-Timing", `stt;dur=${Date.now() - t0};desc="${stt.name}"`);
-  if (!text) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
-  res.json({ transcript: text.slice(0, config.limits.maxAnswerChars) });
+  let status = 200;
+  let chars = 0;
+  try {
+    const interview = await interviews.assertActive(req.userId!, req.params.id as string);
+    if (!req.file) throw new HttpError(400, "NO_AUDIO", "No audio received");
+    if (!looksLikeAudio(req.file.buffer)) throw new HttpError(400, "INVALID_AUDIO", "Unsupported audio format");
+    // The browser measures how long the student actually spoke; skip STT for silent clips.
+    const voicedSec = Number(req.body?.voicedSec);
+    if (Number.isFinite(voicedSec) && voicedSec < 0.3) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
+    const durationSec = Number(req.body?.durationSec);
+    const text = await getSTT().transcribe(req.file.buffer, req.file.mimetype, interview.language as Lang, {
+      roleSlug: interview.role?.slug,
+      // Latin-script words of a typed role / specialization help STT keep them in English.
+      roleTerms: [interview.roleTitle, interview.specialization].filter((t) => t && /[A-Za-z]/.test(t)).join(", ") || undefined,
+      education: interview.role ? interview.role.domain === "education" : false,
+      question: interview.questions[0]?.text,
+      durationSec: Number.isFinite(durationSec) ? durationSec : undefined,
+      trace,
+    });
+    const used = trace.filter((a) => a.outcome === "ok" || a.outcome === "empty").at(-1)?.provider ?? "?";
+    // Standard timing header (dev tools only; not shown to students).
+    res.set("Server-Timing", `parse;dur=${parseMs}, stt;dur=${Date.now() - t0};desc="${used}"`);
+    if (!text) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
+    chars = text.length;
+    res.json({ transcript: text.slice(0, config.limits.maxAnswerChars) });
+  } catch (err) {
+    status = err instanceof HttpError ? err.status : 500;
+    throw err;
+  } finally {
+    const attempts = trace.map((a) => `${a.provider}:${a.outcome}:${a.ms}ms${a.detail ? `(${a.detail})` : ""}`).join(",");
+    console.log(
+      `[stt] trace=${traceId} status=${status} bytes=${req.file?.size ?? 0} mime=${req.file?.mimetype?.split(";")[0] ?? "?"} clientSec=${req.body?.durationSec ?? "?"} parseMs=${parseMs} sttMs=${Date.now() - t0} attempts=${trace.length} fallback=${trace.length > 1 ? 1 : 0} [${attempts}] chars=${chars}`,
+    );
+  }
 });
 
 interviewsRouter.post("/:id/answers", aiLimiter, async (req, res) => {
