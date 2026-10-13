@@ -5,7 +5,7 @@ import type { Criteria, InterviewContext, PlanResult, ReportText, TurnInput, Tur
 
 const QUESTIONS: Record<Lang, { topic: string; text: string }[]> = {
   en: [
-    { topic: "Motivation", text: "Tell me a little about yourself and why you want to work as a {role}." },
+    { topic: "Motivation", text: "Tell me a little about yourself and why you want this {role} position." },
     { topic: "Classroom management", text: "How would you handle a student who keeps disrupting your lesson?" },
     { topic: "Lesson planning", text: "Walk me through how you would plan a lesson for a topic your students find difficult." },
     { topic: "Differentiation", text: "Your class has students at very different levels. How do you make sure everyone learns?" },

@@ -14,7 +14,8 @@ export function Waveform({ bars = 24, levels, active, className }: { bars?: numb
             key={i}
             className={cn("h-full w-[3px] rounded-full bg-current transition-transform duration-75", !levels && active && "animate-speak-bar")}
             style={{
-              transform: levels || active ? `scaleY(${level})` : "scaleY(0.12)",
+              // Idle: a calm static glyph rather than flat dots.
+              transform: `scaleY(${levels || active ? level : 0.25 + 0.5 * Math.abs(Math.sin(i * 1.3 + 0.6))})`,
               animationDelay: !levels && active ? `${(i % 7) * 0.11}s` : undefined,
             }}
           />
