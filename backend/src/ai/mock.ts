@@ -30,6 +30,13 @@ const QUESTIONS: Record<Lang, { topic: string; text: string }[]> = {
   ],
 };
 
+// Short spoken reactions so demo mode doesn't sound like a fixed list.
+const REACTIONS: Record<Lang, string[]> = {
+  en: ["Thanks, that's helpful.", "Okay, I follow.", "Right.", "That makes sense.", "Good, let's build on that."],
+  ar: ["تمام، واضح.", "شكراً، كلامك مفهوم.", "حلو.", "طيب.", "جميل، خلينا نكمل."],
+};
+const reaction = (lang: Lang, n: number) => REACTIONS[lang][n % REACTIONS[lang].length];
+
 const FOLLOW_UPS: Record<Lang, string[]> = {
   en: [
     "Can you give a concrete example of a strategy you would use in that situation?",
@@ -69,7 +76,7 @@ const FOLLOW_UP_ANSWERS: Record<Lang, string> = {
 };
 
 export function mockTranscript(lang: Lang, question?: string): string {
-  const index = QUESTIONS[lang].findIndex((q) => question && q.text.split("{role}")[0] && question.startsWith(q.text.split("{role}")[0]));
+  const index = QUESTIONS[lang].findIndex((q) => question && q.text.split("{role}")[0] && question.includes(q.text.split("{role}")[0]));
   if (index === -1) return FOLLOW_UP_ANSWERS[lang];
   return TRANSCRIPTS[lang][index] ?? TRANSCRIPTS[lang][1];
 }
@@ -82,7 +89,7 @@ export async function mockPlan(ctx: InterviewContext): Promise<PlanResult> {
   const first = bank[0];
   return {
     topics: bank.slice(0, Math.min(ctx.maxQuestions, bank.length)).map((q) => q.topic),
-    firstQuestion: { topic: first.topic, text: first.text.replace("{role}", ctx.roleName) },
+    firstQuestion: { topic: first.topic, text: `${ctx.language === "ar" ? "أهلاً بيك، وشكراً لحضورك." : "Hi, thanks for coming in."} ${first.text.replace("{role}", ctx.roleName)}` },
   };
 }
 
@@ -131,12 +138,12 @@ export async function mockTurn(input: TurnInput): Promise<TurnResult> {
   }
   // Follow up on short answers (or every third question) but never twice in a row.
   if (!lastWasFollowUp && (words < 25 || questionNumber % 3 === 2)) {
-    const text = FOLLOW_UPS[lang][questionNumber % FOLLOW_UPS[lang].length];
+    const text = `${reaction(lang, questionNumber)} ${FOLLOW_UPS[lang][questionNumber % FOLLOW_UPS[lang].length]}`;
     return { scores, feedback, suggestedAnswer: FEEDBACK[lang].better, decision: "FOLLOW_UP", topic: input.currentTopic, nextQuestion: text };
   }
-  const asked = new Set([...history.map((h) => h.question), input.question]);
-  const next = QUESTIONS[lang].slice(1).find((q) => !asked.has(q.text)) ?? QUESTIONS[lang][1];
-  return { scores, feedback, suggestedAnswer: FEEDBACK[lang].better, decision: "NEXT_TOPIC", topic: next.topic, nextQuestion: next.text };
+  const asked = [...history.map((h) => h.question), input.question].join("\n");
+  const next = QUESTIONS[lang].slice(1).find((q) => !asked.includes(q.text)) ?? QUESTIONS[lang][1];
+  return { scores, feedback, suggestedAnswer: FEEDBACK[lang].better, decision: "NEXT_TOPIC", topic: next.topic, nextQuestion: `${reaction(lang, questionNumber + 2)} ${next.text}` };
 }
 
 const CATEGORY_TEXT: Record<Lang, Record<keyof Criteria, { strength: string; improve: string; practice: string }>> = {

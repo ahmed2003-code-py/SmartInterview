@@ -41,6 +41,8 @@ export interface TurnInput {
   currentTopic: string | null;
   answer: string;
   questionNumber: number;
+  /** Follow-ups in a row ending with the current question (0 if it is a main question). */
+  consecutiveFollowUps: number;
 }
 
 export type Decision = "FOLLOW_UP" | "NEXT_TOPIC" | "FINISH";

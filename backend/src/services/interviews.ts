@@ -142,6 +142,11 @@ export async function submitAnswer(userId: string, id: string, input: { question
     currentTopic: current.topic,
     answer: input.transcript,
     questionNumber: current.order,
+    consecutiveFollowUps: (() => {
+      let n = 0;
+      for (let k = interview.questions.length - 1; k >= 0 && interview.questions[k].kind === "FOLLOW_UP"; k--) n++;
+      return n;
+    })(),
   });
 
   const avg = CRITERIA.reduce((sum, c) => sum + result.scores[c], 0) / CRITERIA.length;

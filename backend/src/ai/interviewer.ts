@@ -11,7 +11,7 @@ const text = (max: number) => z.string().trim().min(1).transform((s) => s.slice(
 
 const PlanSchema = z.object({
   topics: z.array(text(80)).min(1).max(12),
-  firstQuestion: z.object({ topic: text(80), text: text(400) }),
+  firstQuestion: z.object({ topic: text(80), text: text(500) }),
 });
 
 const TurnSchema = z.object({
@@ -20,6 +20,7 @@ const TurnSchema = z.object({
   suggestedAnswer: text(1200),
   decision: z.enum(["FOLLOW_UP", "NEXT_TOPIC", "FINISH"]),
   topic: z.string().trim().max(80).nullish().transform((v) => v || null),
+  reaction: z.string().trim().max(200).nullish().transform((v) => v || null),
   nextQuestion: z.string().trim().max(400).nullish().transform((v) => v || null),
 });
 
@@ -30,15 +31,21 @@ const ReportSchema = z.object({
   generalFeedback: text(1500),
 });
 
+/** "Reaction. Question?" — adds a sentence break if the model left none; drops reactions that are themselves questions. */
+function joinReaction(reaction: string | null, question: string | null) {
+  if (!question || !reaction || /[?؟]$/.test(reaction)) return question;
+  return /[.!،,:…]$/.test(reaction) ? `${reaction} ${question}` : `${reaction}. ${question}`;
+}
+
 /** Ask the LLM, validate the JSON, and retry once if the shape is wrong. */
-async function ask<T>(schema: z.ZodType<T>, prompt: { system: string; user: string }, maxTokens: number): Promise<T> {
+async function ask<T>(schema: z.ZodType<T>, prompt: { system: string; user: string }, maxTokens: number, effort: "low" | "medium" = "low"): Promise<T> {
   const messages = [
     { role: "system" as const, content: prompt.system },
     { role: "user" as const, content: prompt.user },
   ];
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const parsed = schema.safeParse(await chatJSON(messages, maxTokens));
+      const parsed = schema.safeParse(await chatJSON(messages, maxTokens, effort));
       if (parsed.success) return parsed.data;
       console.warn(`LLM response failed validation (attempt ${attempt})`, parsed.error.issues.slice(0, 3));
     } catch (err) {
@@ -51,13 +58,16 @@ async function ask<T>(schema: z.ZodType<T>, prompt: { system: string; user: stri
 
 export async function planInterview(ctx: InterviewContext): Promise<PlanResult> {
   if (config.mockAI) return mockPlan(ctx);
-  return ask(PlanSchema, planPrompt(ctx), 500);
+  return ask(PlanSchema, planPrompt(ctx), 500, "medium");
 }
 
 export async function evaluateTurn(input: TurnInput): Promise<TurnResult> {
   const result = config.mockAI
     ? await mockTurn(input)
-    : await ask(TurnSchema, turnPrompt(input.ctx, input.history, input.question, input.currentKind, input.answer, input.questionNumber), 700);
+    : await ask(TurnSchema, turnPrompt(input.ctx, input.history, input.question, input.currentKind, input.answer, input.questionNumber, input.consecutiveFollowUps), 800, "medium").then(
+        // The interviewer's short reaction is spoken together with the next question.
+        ({ reaction, ...r }) => ({ ...r, nextQuestion: joinReaction(reaction, r.nextQuestion) }),
+      );
 
   // The server, not the model, has the final word on interview length.
   const isLast = input.questionNumber >= input.ctx.maxQuestions;
@@ -65,8 +75,8 @@ export async function evaluateTurn(input: TurnInput): Promise<TurnResult> {
   if (isLast || !result.nextQuestion) return { ...result, decision: "FINISH", nextQuestion: null };
   if (result.decision === "FINISH" && input.questionNumber < minQuestions) return { ...result, decision: "NEXT_TOPIC" };
   if (result.decision === "FINISH") return { ...result, nextQuestion: null };
-  // Never two follow-ups in a row: treat a second one as a new main question.
-  if (result.decision === "FOLLOW_UP" && input.currentKind === "FOLLOW_UP") return { ...result, decision: "NEXT_TOPIC" };
+  // At most two follow-ups in a row on one topic; a third becomes a new main question.
+  if (result.decision === "FOLLOW_UP" && input.consecutiveFollowUps >= 2) return { ...result, decision: "NEXT_TOPIC" };
   return result;
 }
 
