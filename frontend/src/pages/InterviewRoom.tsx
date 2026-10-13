@@ -366,11 +366,19 @@ function Room({
     return () => window.clearTimeout(t);
   });
 
-  // Keep the newest part of the conversation in view.
+  // Scrolling: a new question is brought near the top of the view (so it's easy to read);
+  // state changes below it (recording, thinking, done) only scroll if the student is already near the bottom.
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [interview.questions.length, phase, pending, Math.floor(caption.text.length / 60)]);
+    const q = el?.querySelector<HTMLElement>(`[data-question="${interview.questions.at(-1)?.id}"]`);
+    if (el && q) el.scrollTo({ top: Math.max(0, q.offsetTop - 24), behavior: "smooth" });
+  }, [interview.questions.length]);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 280;
+    if (nearBottom || phase === "RECORDING" || phase === "DONE") el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [phase, pending]);
 
   // ---- render ----
   const roleName = lang === "ar" ? interview.role.nameAr : interview.role.nameEn;
@@ -451,7 +459,7 @@ function Room({
       </header>
 
       {/* Conversation */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+      <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-7 px-4 pt-8 pb-10 sm:px-6 sm:pt-12">
           <div className="text-center text-xs text-subtle">
             <div className="flex items-center gap-3">
@@ -468,7 +476,7 @@ function Room({
           {interview.questions.map((q) => {
             const isCurrent = q.id === currentQuestion?.id && !done;
             return (
-              <div key={q.id} className="flex flex-col gap-5">
+              <div key={q.id} data-question={q.id} className="flex flex-col gap-5">
                 <AiMessage
                   text={q.text}
                   lang={q.language === "en" ? "en" : "ar"}

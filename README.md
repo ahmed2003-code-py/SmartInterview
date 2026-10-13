@@ -65,6 +65,10 @@ While recording, the student's message shows a live audio-level meter and, in br
 
 Groq stays primary: it keeps English terms in English, it's 3.5× faster, and the Gemini free tier only allows about 3 interviews a day. Gemini is the automatic fallback. With a paid Gemini plan, `STT_PROVIDER=gemini` gives much better Egyptian-Arabic accuracy.
 
+**CV personalization (optional):** on the setup page the student can upload a CV (PDF, DOCX or TXT, up to 5 MB). The file is read in memory, condensed into a short profile (education, experience, skills, with no contact details), and only that profile is stored with the interview. The original file and raw text are never stored or logged. CV and job-description text are treated as untrusted data. The interviewer uses the CV for one or two natural questions; the rest stay on the role and the job.
+
+**Report language:** Arabic interview → Arabic report. English interview → English report. Smart interview → the language that dominates the student's answers. The whole report, labels included, renders in that language and direction.
+
 ## Local setup
 
 Requirements: Node.js 22 and Docker (used only for local PostgreSQL).
@@ -102,6 +106,7 @@ GROQ_API_KEY=gsk_...
 | `ELEVENLABS_VOICE_ID` / `ELEVENLABS_MODEL_ID` | | Defaults: `XrExE9yKIg1WjnnlVkGX` (Matilda, premade, works on the free plan) / `eleven_v4_turbo` |
 | `GROQ_STT_MODEL` / `LLM_MODEL` | | Defaults: `whisper-large-v3` / `openai/gpt-oss-120b` |
 | `STT_PROVIDER` | | `groq` (default) or `gemini`. The other provider is used automatically if the primary fails |
+| `LLM_FALLBACK_MODEL` | | Used when the main model is rate-limited or failing. Default `openai/gpt-oss-20b` (Groq limits are per model) |
 | `GEMINI_API_KEY` / `GEMINI_STT_MODEL` | | Optional Gemini STT (default model `gemini-2.5-flash`). Backend only |
 | `STT_DEBUG` | | `true` logs safe STT metadata (size, duration, language, model) in production |
 

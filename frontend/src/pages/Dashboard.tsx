@@ -22,8 +22,8 @@ interface DashboardData {
 
 function Stat({ label, value, suffix, loading }: { label: string; value: string | number | null; suffix?: string; loading?: boolean }) {
   return (
-    <div className="min-w-0 px-4 py-4 sm:px-5">
-      <dt className="t-label truncate">{label}</dt>
+    <div className="flex min-w-0 flex-col justify-between px-4 py-4 sm:px-5">
+      <dt className="t-label leading-snug">{label}</dt>
       <dd className="t-metric mt-2">
         {loading ? <Skeleton className="h-9 w-16" /> : (value ?? "—")}
         {!loading && value != null && suffix && <span className="font-sans text-sm text-subtle">{suffix}</span>}
@@ -72,7 +72,7 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          <dl className="mt-8 grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-surface rtl:divide-x-reverse">
+          <dl className="mt-8 grid grid-cols-3 rounded-xl border border-border bg-surface [&>*:not(:first-child)]:border-s [&>*]:border-border">
             <Stat label={d.dashboard.totalInterviews} value={data?.totalInterviews ?? null} loading={loading} />
             <Stat label={d.dashboard.averageScore} value={data?.averageScore ?? null} loading={loading} />
             <Stat label={d.dashboard.bestScore} value={data?.bestScore ?? null} loading={loading} />

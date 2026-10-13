@@ -3,6 +3,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { Waveform } from "./Waveform";
 import { useI18n } from "@/i18n";
 import { cn, textDir } from "@/lib/utils";
+import { ExpandableText } from "@/components/ui/expandable-text";
 
 export function InterviewerAvatar({ speaking, className }: { speaking?: boolean; className?: string }) {
   return (
@@ -80,8 +81,9 @@ export function StudentMessage(props: { state: StudentState; text?: string; reco
     <div className="flex animate-fade-up justify-end">
       <div
         className={cn(
-          "w-fit max-w-[88%] min-w-[min(18rem,88%)] rounded-lg border bg-surface px-4 py-3 transition-colors sm:max-w-[80%]",
-          props.state === "recording" || props.state === "failed" ? "border-danger/35" : "border-border",
+          "w-fit max-w-[88%] min-w-[min(18rem,88%)] rounded-xl px-4 py-3 transition-colors sm:max-w-[80%]",
+          props.state === "recording" || props.state === "failed" ? "bg-danger-soft/60 ring-1 ring-danger/25" : "bg-surface-2/70",
+          props.state === "sending" && "opacity-70",
         )}
       >
         <div className="mb-1 flex items-center justify-between gap-4 text-xs">
@@ -113,9 +115,8 @@ export function StudentMessage(props: { state: StudentState; text?: string; reco
             </p>
           </>
         ) : (
-          <p className="text-[15px] leading-relaxed whitespace-pre-wrap" dir={textDir(props.text ?? "")}>
-            {props.text}
-          </p>
+          // Long answers stay complete but are clamped so they don't take over the screen.
+          <ExpandableText text={props.text ?? ""} lines={6} className="text-[15px] leading-relaxed" />
         )}
       </div>
     </div>

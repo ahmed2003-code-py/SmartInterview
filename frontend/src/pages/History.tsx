@@ -8,6 +8,7 @@ import { InterviewList } from "@/features/dashboard/InterviewList";
 import { useFetch } from "@/hooks/useFetch";
 import { api, type InterviewSummary, type Role } from "@/lib/api";
 import { useI18n } from "@/i18n";
+import { PageHeader } from "@/components/layout/PageHeader";
 
 export default function History() {
   const { d, lang } = useI18n();
@@ -30,10 +31,9 @@ export default function History() {
 
   return (
     <div className="animate-fade-up">
-      <h1 className="font-display text-[2.3rem] leading-tight font-[450] sm:text-[2.75rem]">{d.history.title}</h1>
-      <p className="mt-2 text-muted">{d.history.subtitle}</p>
+      <PageHeader title={d.history.title} />
 
-      <div className="mt-8 flex flex-wrap gap-2">
+      <div className="mt-6 flex flex-wrap gap-2">
         <Select
           label={d.history.role}
           value={roleId}

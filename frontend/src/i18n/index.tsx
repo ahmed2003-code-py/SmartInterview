@@ -54,10 +54,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
  * Renders children in a fixed language (e.g. the interview room follows the interview's language),
  * temporarily switching the document direction and restoring the user's language on exit.
  */
-export function I18nOverride({ lang, children }: { lang: Lang; children: ReactNode }) {
+export function I18nOverride({ lang, children, scope = "document" }: { lang: Lang; children: ReactNode; scope?: "document" | "local" }) {
   const parent = useI18n();
   const value = useMemo<I18n>(() => buildI18n(lang, parent.setLang), [lang, parent.setLang]);
   useEffect(() => {
+    if (scope === "local") return;
     const el = document.documentElement;
     el.lang = lang;
     el.dir = lang === "ar" ? "rtl" : "ltr";
@@ -65,7 +66,16 @@ export function I18nOverride({ lang, children }: { lang: Lang; children: ReactNo
       el.lang = parent.lang;
       el.dir = parent.dir;
     };
-  }, [lang, parent.lang, parent.dir]);
+  }, [lang, parent.lang, parent.dir, scope]);
+  if (scope === "local")
+    // Only this section switches language/direction (e.g. an Arabic report inside an English app).
+    return (
+      <I18nContext.Provider value={value}>
+        <div lang={lang} dir={value.dir}>
+          {children}
+        </div>
+      </I18nContext.Provider>
+    );
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
