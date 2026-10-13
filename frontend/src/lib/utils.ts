@@ -24,3 +24,13 @@ export function scoreTone(score: number) {
   if (score >= 50) return "text-warning";
   return "text-danger";
 }
+
+/**
+ * Paragraph direction for mixed Arabic/English text by dominant script, so an Arabic sentence that
+ * happens to start with an English term ("the weekend… بنزور…") still reads right-to-left.
+ */
+export function textDir(text: string): "rtl" | "ltr" {
+  const ar = (text.match(/[\u0600-\u06FF]/g) ?? []).length;
+  const latin = (text.match(/[A-Za-z]/g) ?? []).length;
+  return ar >= latin * 0.6 && ar > 0 ? "rtl" : "ltr";
+}

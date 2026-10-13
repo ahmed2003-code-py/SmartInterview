@@ -40,7 +40,8 @@ model Interview {
   user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   roleId         String
   role           Role            @relation(fields: [roleId], references: [id])
-  language       String // "en" | "ar"
+  language       String // "en" | "ar": the preferred / starting language
+  languageMode   String          @default("fixed") // "fixed" | "smart" (interviewer follows the student's language)
   difficulty     String // "beginner" | "intermediate" | "advanced"
   length         String // "quick" | "standard" | "full"
   maxQuestions   Int
@@ -64,6 +65,7 @@ model Question {
   interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
   order       Int
   text        String
+  language    String? // language this question was asked in: "ar" | "en" | "mixed"
   kind        String // "MAIN" | "FOLLOW_UP"
   topic       String?
   createdAt   DateTime  @default(now())

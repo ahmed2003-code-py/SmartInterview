@@ -15,11 +15,14 @@ export interface InterviewContext {
   roleNameEn: string;
   focusAreas: string[];
   difficulty: "beginner" | "intermediate" | "advanced";
-  language: Lang;
+  language: Lang; // preferred / starting language (also used for feedback and the report)
+  languageMode: "fixed" | "smart";
   maxQuestions: number;
   jobDescription: string | null;
   topics: string[];
 }
+
+export type SpokenLanguage = "ar" | "en" | "mixed";
 
 export interface PlanResult {
   topics: string[];
@@ -43,6 +46,10 @@ export interface TurnInput {
   questionNumber: number;
   /** Follow-ups in a row ending with the current question (0 if it is a main question). */
   consecutiveFollowUps: number;
+  /** Languages of the interviewer's recent questions, oldest first. */
+  recentLanguages: SpokenLanguage[];
+  /** Explicit "switch to X" request detected in the student's latest answer (smart mode). */
+  requestedLanguage: "ar" | "en" | null;
 }
 
 export type Decision = "FOLLOW_UP" | "NEXT_TOPIC" | "FINISH";
@@ -54,6 +61,8 @@ export interface TurnResult {
   decision: Decision;
   topic: string | null;
   nextQuestion: string | null;
+  /** Language of nextQuestion. Always the interview language in fixed mode. */
+  responseLanguage: SpokenLanguage;
 }
 
 export interface ReportText {

@@ -2,7 +2,7 @@ import { Volume2 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Waveform } from "./Waveform";
 import { useI18n } from "@/i18n";
-import { cn } from "@/lib/utils";
+import { cn, textDir } from "@/lib/utils";
 
 export function InterviewerAvatar({ speaking, className }: { speaking?: boolean; className?: string }) {
   return (
@@ -45,7 +45,7 @@ export function AiMessage(props: {
             "mt-1.5 font-display text-pretty",
             props.current ? "text-[1.4rem] leading-[1.3] font-[450] sm:text-[1.6rem]" : "text-[1.15rem] leading-snug text-fg/75",
           )}
-          dir="auto"
+          dir={textDir(props.text)}
           lang={props.lang}
         >
           {props.text}
@@ -68,33 +68,52 @@ export function AiMessage(props: {
 
 type StudentState = "final" | "sending" | "failed" | "recording" | "transcribing";
 
-/** The student's answer as a message in the conversation. */
-export function StudentMessage(props: { state: StudentState; text?: string; recordingTime?: string }) {
+/**
+ * The student's answer as a message in the conversation. While recording it shows a live level
+ * meter and (where the browser supports it) provisional captions; these are display-only and are
+ * replaced by the final transcript, which is exactly what gets evaluated.
+ */
+export function StudentMessage(props: { state: StudentState; text?: string; recordingTime?: string; caption?: string; levels?: number[] }) {
   const { d } = useI18n();
+  const caption = props.caption?.trim();
   return (
     <div className="flex animate-fade-up justify-end">
       <div
         className={cn(
-          "w-fit max-w-[88%] rounded-lg border bg-surface px-4 py-3 transition-colors sm:max-w-[80%]",
+          "w-fit max-w-[88%] min-w-[min(18rem,88%)] rounded-lg border bg-surface px-4 py-3 transition-colors sm:max-w-[80%]",
           props.state === "recording" || props.state === "failed" ? "border-danger/35" : "border-border",
         )}
       >
-        <p className="mb-1 text-xs text-subtle">{d.room.you}</p>
-        {props.state === "recording" ? (
-          <p className="flex items-center gap-2 text-[15px] text-danger">
-            <span className="size-2 animate-pulse rounded-full bg-current" />
-            {d.room.states.RECORDING}
-            <span className="tabular-nums text-danger/80" dir="ltr">
-              {props.recordingTime}
+        <div className="mb-1 flex items-center justify-between gap-4 text-xs">
+          <span className="text-subtle">{d.room.you}</span>
+          {props.state === "recording" && (
+            <span className="flex items-center gap-2 text-danger">
+              <span className="size-2 animate-pulse rounded-full bg-current" />
+              {d.room.states.RECORDING}
+              <span className="tabular-nums" dir="ltr">
+                {props.recordingTime}
+              </span>
             </span>
-          </p>
-        ) : props.state === "transcribing" ? (
-          <p className="flex items-center gap-2 text-[15px] text-muted">
-            <Spinner className="size-3.5" />
-            {d.room.transcribingMsg}
-          </p>
+          )}
+          {props.state === "transcribing" && (
+            <span className="flex items-center gap-1.5 text-muted">
+              <Spinner className="size-3" />
+              {d.room.transcribingMsg}
+            </span>
+          )}
+        </div>
+
+        {props.state === "recording" || props.state === "transcribing" ? (
+          <>
+            {props.state === "recording" && props.levels && (
+              <Waveform levels={props.levels} bars={props.levels.length} className="my-1.5 h-6 w-full justify-between overflow-hidden text-danger/60" />
+            )}
+            <p className={cn("text-[15px] leading-relaxed", caption ? "text-muted" : "text-subtle italic")} dir={caption ? textDir(caption) : undefined}>
+              {caption || (props.state === "recording" ? d.room.listening : "")}
+            </p>
+          </>
         ) : (
-          <p className="text-[15px] leading-relaxed whitespace-pre-wrap" dir="auto">
+          <p className="text-[15px] leading-relaxed whitespace-pre-wrap" dir={textDir(props.text ?? "")}>
             {props.text}
           </p>
         )}

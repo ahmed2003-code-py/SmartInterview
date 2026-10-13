@@ -13,10 +13,11 @@ import { ThemeToggle } from "@/components/layout/Preferences";
 import { Waveform } from "@/features/interview/Waveform";
 import { AiMessage, InterviewerAvatar, StudentMessage, ThinkingMessage } from "@/features/interview/Conversation";
 import { useInterviewerVoice } from "@/hooks/useInterviewerVoice";
+import { useLiveCaption } from "@/hooks/useLiveCaption";
 import { recordingSupported, useRecorder, type Recording, type RecorderError } from "@/hooks/useRecorder";
 import { api, ApiError, type AppConfig, type InterviewDTO, type QuestionDTO } from "@/lib/api";
 import { I18nOverride, useI18n } from "@/i18n";
-import { clockTime, cn } from "@/lib/utils";
+import { clockTime, cn, textDir } from "@/lib/utils";
 
 /**
  * READY → AI_SPEAKING → WAITING_FOR_USER → RECORDING → TRANSCRIBING → ANALYZING → AI_SPEAKING …
@@ -27,6 +28,36 @@ export type Phase = "READY" | "AI_SPEAKING" | "WAITING_FOR_USER" | "RECORDING" |
 interface RoomError {
   message: string;
   retry?: () => void;
+}
+
+// Developer-only stage timing: localStorage.debugTiming = "1" → console table per answer.
+const DEBUG_TIMING = (() => {
+  try {
+    return import.meta.env.DEV || localStorage.getItem("debugTiming") === "1";
+  } catch {
+    return false;
+  }
+})();
+const marks: Record<string, number> = {};
+const mark = (name: string) => DEBUG_TIMING && (marks[name] = performance.now());
+function serverTiming(path: string) {
+  const e = performance.getEntriesByType("resource").filter((r) => r.name.includes(path)).at(-1) as PerformanceResourceTiming | undefined;
+  return Object.fromEntries((e?.serverTiming ?? []).map((t) => [t.name, Math.round(t.duration)]));
+}
+function reportTiming() {
+  if (!DEBUG_TIMING || !marks.stop) return;
+  const d = (a: string, b: string) => (marks[a] && marks[b] ? Math.round(marks[b] - marks[a]) : null);
+  console.table({
+    "stop → audio ready": d("stop", "audioReady"),
+    "audio ready → transcript received": d("audioReady", "sttDone"),
+    "  of which server STT": serverTiming("/transcribe").stt ?? null,
+    "transcript → shown + sent": d("sttDone", "submitted"),
+    "sent → next question received": d("submitted", "answerDone"),
+    "  of which server AI": serverTiming("/answers").ai ?? null,
+    "next question → voice starts": d("answerDone", "voiceStart"),
+    "TOTAL stop → voice": d("stop", "voiceStart"),
+  });
+  for (const k of Object.keys(marks)) delete marks[k];
 }
 
 const SILENCE_PEAK = 0.012;
@@ -126,8 +157,13 @@ function Room({
   const interviewRef = useRef(interview);
   interviewRef.current = interview;
 
-  const voice = useInterviewerVoice(interview.language, id, config.arabicVoice);
+  const onVoiceStart = useCallback(() => {
+    mark("voiceStart");
+    reportTiming();
+  }, []);
+  const voice = useInterviewerVoice(id, config.arabicVoice, onVoiceStart);
   const recorder = useRecorder(config.maxAnswerSeconds);
+  const caption = useLiveCaption(); // provisional, display-only
 
   const current = interview.questions.at(-1);
   const currentQuestion = current && !current.answer ? current : null;
@@ -158,7 +194,7 @@ function Room({
   const ask = useCallback(
     async (q: QuestionDTO) => {
       setPhase("AI_SPEAKING");
-      await voice.speak({ id: q.id, text: q.text });
+      await voice.speak({ id: q.id, text: q.text, language: q.language ?? interview.language });
       // Only advance if nothing else (e.g. End interview) changed the phase meanwhile.
       setPhase((p) => (p === "AI_SPEAKING" ? "WAITING_FOR_USER" : p));
     },
@@ -197,12 +233,14 @@ function Room({
     setError(null);
     setPending(text);
     setPhase("ANALYZING");
+    mark("submitted");
     try {
       const res = await api.post<{ interview: InterviewDTO; shouldEndInterview: boolean }>(`/interviews/${id}/answers`, {
         questionId: q.id,
         transcript: text.trim(),
         durationSec: lastDurationRef.current ?? undefined,
       });
+      mark("answerDone");
       setInterview(res.interview);
       setPending(null);
       setTyped("");
@@ -249,6 +287,8 @@ function Room({
       return;
     }
     sttBusyRef.current = false;
+    mark("sttDone");
+    caption.clear();
     lastDurationRef.current = rec.durationSec;
     // Show what the system understood, then send it straight away.
     await submit(transcript);
@@ -272,16 +312,27 @@ function Room({
       return;
     }
     setPhase("RECORDING");
+    // Captions: in smart mode follow the language of the student's last answer; otherwise the question's
+    // language (mixed → Arabic recognizer, which handles common English terms best).
+    const lastAnswer = interview.questions.filter((q) => q.answer).at(-1)?.answer?.transcript;
+    const captionLang =
+      interview.languageMode === "smart" && lastAnswer ? (textDir(lastAnswer) === "ltr" ? "en" : "ar") : (currentQuestion?.language ?? interview.language) === "en" ? "en" : "ar";
+    caption.start(captionLang);
   }
 
   async function stopAnswer() {
+    mark("stop");
+    caption.stop();
     const rec = await recorder.stop(); // null for a second Stop click
     if (!rec) return;
+    mark("audioReady");
     if (rec.durationSec < 1 || rec.blob.size < 1500) {
+      caption.clear();
       setPhase("WAITING_FOR_USER");
       return setError({ message: d.room.errors.tooShort });
     }
     if (rec.peak < SILENCE_PEAK || rec.voicedSec < MIN_VOICED_SEC) {
+      caption.clear();
       setPhase("WAITING_FOR_USER");
       return setError({ message: d.room.errors.noSpeech });
     }
@@ -295,6 +346,7 @@ function Room({
   }
 
   async function endInterview() {
+    caption.stop();
     if (recorder.recording) await recorder.stop();
     finish();
   }
@@ -318,7 +370,7 @@ function Room({
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [interview.questions.length, phase, pending]);
+  }, [interview.questions.length, phase, pending, Math.floor(caption.text.length / 60)]);
 
   // ---- render ----
   const roleName = lang === "ar" ? interview.role.nameAr : interview.role.nameEn;
@@ -419,7 +471,7 @@ function Room({
               <div key={q.id} className="flex flex-col gap-5">
                 <AiMessage
                   text={q.text}
-                  lang={interview.language}
+                  lang={q.language === "en" ? "en" : "ar"}
                   followUp={q.kind === "FOLLOW_UP"}
                   current={isCurrent}
                   speaking={isCurrent && phase === "AI_SPEAKING"}
@@ -429,9 +481,9 @@ function Room({
                 {q.answer ? (
                   <StudentMessage state="final" text={q.answer.transcript} />
                 ) : isCurrent && phase === "RECORDING" ? (
-                  <StudentMessage state="recording" recordingTime={clockTime(recorder.elapsed)} />
+                  <StudentMessage state="recording" recordingTime={clockTime(recorder.elapsed)} caption={caption.text} levels={recorder.levels} />
                 ) : isCurrent && phase === "TRANSCRIBING" ? (
-                  <StudentMessage state="transcribing" />
+                  <StudentMessage state="transcribing" caption={caption.text} />
                 ) : isCurrent && pending ? (
                   <StudentMessage state={phase === "ANSWER_FAILED" ? "failed" : "sending"} text={pending} />
                 ) : null}
@@ -488,7 +540,7 @@ function Room({
             isResuming={answeredCount > 0}
             resumeText={fmt(d.room.resumeBody, { n: questionNumber })}
             reportHref={`/interviews/${id}/report`}
-            noTts={!voice.supported}
+            noTts={!voice.canSpeak(currentQuestion?.language ?? interview.language)}
             onBegin={begin}
             onStart={startAnswer}
             onStop={stopAnswer}

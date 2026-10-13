@@ -15,6 +15,10 @@ export const config = {
   mockAI: env.MOCK_AI === "true",
   seedDemoAccount: env.SEED_DEMO_ACCOUNT === "true",
   stt: {
+    /** "groq" | "gemini". The other one (if its key is set) is used as a fallback. */
+    provider: (env.STT_PROVIDER === "gemini" ? "gemini" : "groq") as "groq" | "gemini",
+    geminiApiKey: env.GEMINI_API_KEY ?? "",
+    geminiModel: env.GEMINI_STT_MODEL || "gemini-2.5-flash",
     groqApiKey: env.GROQ_API_KEY ?? "",
     // Full large-v3: noticeably more accurate than turbo on Egyptian Arabic.
     groqModel: env.GROQ_STT_MODEL || "whisper-large-v3",

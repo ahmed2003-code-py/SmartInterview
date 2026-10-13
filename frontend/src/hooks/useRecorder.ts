@@ -61,7 +61,7 @@ export function useRecorder(maxSeconds: number) {
       if (!rec || rec.state !== "recording" || stopResolveRef.current) return resolve(null);
       stopResolveRef.current = resolve;
       // A short tail so the last syllable (often spoken while clicking Stop) is kept.
-      window.setTimeout(() => rec.state === "recording" && rec.stop(), 350);
+      window.setTimeout(() => rec.state === "recording" && rec.stop(), 250);
     });
   }, []);
 

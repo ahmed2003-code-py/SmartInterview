@@ -3,7 +3,8 @@ import { prisma } from "../db/prisma.js";
 import { config, QUESTION_COUNTS, type InterviewLength } from "../config.js";
 import { HttpError } from "../middleware/errors.js";
 import { evaluateTurn, planInterview, writeReport } from "../ai/interviewer.js";
-import { CRITERIA, type Criteria, type InterviewContext } from "../ai/types.js";
+import { CRITERIA, type Criteria, type InterviewContext, type SpokenLanguage } from "../ai/types.js";
+import { detectLanguageRequest } from "../ai/language.js";
 
 const MAX_DURATION_SEC = 2 * 60 * 60;
 
@@ -23,6 +24,7 @@ function contextFor(interview: Interview & { role: Role }): InterviewContext {
     focusAreas: interview.role.focusAreas,
     difficulty: interview.difficulty as InterviewContext["difficulty"],
     language: lang,
+    languageMode: interview.languageMode === "smart" ? "smart" : "fixed",
     maxQuestions: interview.maxQuestions,
     jobDescription: interview.jobDescription,
     topics: interview.topics,
@@ -42,6 +44,7 @@ function serialize(interview: InterviewDetail) {
     id: interview.id,
     status: interview.status,
     language: interview.language,
+    languageMode: interview.languageMode,
     difficulty: interview.difficulty,
     length: interview.length,
     maxQuestions: interview.maxQuestions,
@@ -56,6 +59,7 @@ function serialize(interview: InterviewDetail) {
       id: q.id,
       order: q.order,
       text: q.text,
+      language: q.language ?? interview.language,
       kind: q.kind,
       topic: q.topic,
       answer: q.answer
@@ -79,14 +83,15 @@ function serialize(interview: InterviewDetail) {
 
 export async function createInterview(
   userId: string,
-  input: { roleId: string; language: "en" | "ar"; difficulty: InterviewContext["difficulty"]; length: InterviewLength; jobDescription?: string | null },
+  input: { roleId: string; language: "en" | "ar"; languageMode?: "fixed" | "smart"; difficulty: InterviewContext["difficulty"]; length: InterviewLength; jobDescription?: string | null },
 ) {
   const role = await prisma.role.findUnique({ where: { id: input.roleId } });
   if (!role) throw new HttpError(400, "INVALID_ROLE", "Unknown role");
 
   const maxQuestions = QUESTION_COUNTS[input.length];
   const jobDescription = input.jobDescription?.trim().slice(0, config.limits.maxJobDescriptionChars) || null;
-  const draft = { role, language: input.language, difficulty: input.difficulty, maxQuestions, jobDescription, topics: [] } as unknown as Interview & { role: Role };
+  const languageMode = input.languageMode ?? "fixed";
+  const draft = { role, language: input.language, languageMode, difficulty: input.difficulty, maxQuestions, jobDescription, topics: [] } as unknown as Interview & { role: Role };
   const plan = await planInterview(contextFor(draft));
 
   const interview = await prisma.interview.create({
@@ -94,13 +99,14 @@ export async function createInterview(
       userId,
       roleId: role.id,
       language: input.language,
+      languageMode,
       difficulty: input.difficulty,
       length: input.length,
       maxQuestions,
       jobDescription,
       topics: plan.topics,
       isMock: config.mockAI,
-      questions: { create: { order: 1, text: plan.firstQuestion.text, kind: "MAIN", topic: plan.firstQuestion.topic } },
+      questions: { create: { order: 1, text: plan.firstQuestion.text, language: input.language, kind: "MAIN", topic: plan.firstQuestion.topic } },
     },
     include: detailInclude,
   });
@@ -142,6 +148,8 @@ export async function submitAnswer(userId: string, id: string, input: { question
     currentTopic: current.topic,
     answer: input.transcript,
     questionNumber: current.order,
+    recentLanguages: interview.questions.slice(-4).map((q) => (q.language ?? interview.language) as SpokenLanguage),
+    requestedLanguage: interview.languageMode === "smart" ? detectLanguageRequest(input.transcript) : null,
     consecutiveFollowUps: (() => {
       let n = 0;
       for (let k = interview.questions.length - 1; k >= 0 && interview.questions[k].kind === "FOLLOW_UP"; k--) n++;
@@ -169,6 +177,7 @@ export async function submitAnswer(userId: string, id: string, input: { question
             interviewId: id,
             order: current.order + 1,
             text: result.nextQuestion,
+            language: result.responseLanguage,
             kind: result.decision === "FOLLOW_UP" ? "FOLLOW_UP" : "MAIN",
             topic: result.decision === "FOLLOW_UP" ? current.topic : result.topic,
           },
@@ -278,7 +287,7 @@ export async function dashboard(userId: string) {
 export async function findOwnedQuestion(userId: string, interviewId: string, questionId: string) {
   const question = await prisma.question.findFirst({
     where: { id: questionId, interviewId, interview: { userId } },
-    select: { id: true, text: true, interview: { select: { language: true } } },
+    select: { id: true, text: true, language: true, interview: { select: { language: true } } },
   });
   if (!question) throw new HttpError(404, "NOT_FOUND", "Question not found");
   return question;

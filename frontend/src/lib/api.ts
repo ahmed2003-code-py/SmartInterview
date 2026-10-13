@@ -54,6 +54,8 @@ export interface QuestionDTO {
   id: string;
   order: number;
   text: string;
+  /** Language the question was asked in (smart mode can switch). */
+  language: "ar" | "en" | "mixed";
   kind: "MAIN" | "FOLLOW_UP";
   topic: string | null;
   answer: null | {
@@ -79,6 +81,7 @@ export interface InterviewDTO {
   id: string;
   status: InterviewStatus;
   language: "en" | "ar";
+  languageMode: "fixed" | "smart";
   difficulty: Difficulty;
   length: Length;
   maxQuestions: number;

@@ -5,6 +5,7 @@ import { HttpError } from "../middleware/errors.js";
 import { mockPlan, mockReport, mockTurn } from "./mock.js";
 import { planPrompt, reportPrompt, turnPrompt } from "./prompts.js";
 import type { Criteria, InterviewContext, PlanResult, ReportText, TurnInput, TurnResult } from "./types.js";
+import { scriptLanguage } from "./language.js";
 
 const score = z.coerce.number().transform((n) => Math.max(1, Math.min(10, Math.round(n))));
 const text = (max: number) => z.string().trim().min(1).transform((s) => s.slice(0, max));
@@ -21,6 +22,8 @@ const TurnSchema = z.object({
   decision: z.enum(["FOLLOW_UP", "NEXT_TOPIC", "FINISH"]),
   topic: z.string().trim().max(80).nullish().transform((v) => v || null),
   reaction: z.string().trim().max(200).nullish().transform((v) => v || null),
+  responseLanguage: z.enum(["ar", "en", "mixed"]).nullish().catch(null),
+  languageSwitchReason: z.string().max(40).nullish().catch(null),
   nextQuestion: z.string().trim().max(400).nullish().transform((v) => v || null),
 });
 
@@ -61,13 +64,34 @@ export async function planInterview(ctx: InterviewContext): Promise<PlanResult> 
   return ask(PlanSchema, planPrompt(ctx), 500, "medium");
 }
 
+async function llmTurn(input: TurnInput, retryNote?: string): Promise<TurnResult> {
+  const { reaction, responseLanguage, languageSwitchReason: _r, ...r } = await ask(
+    TurnSchema,
+    turnPrompt(input.ctx, input.history, input.question, input.currentKind, input.answer, input.questionNumber, input.consecutiveFollowUps, {
+      recent: input.recentLanguages,
+      requested: input.requestedLanguage,
+      retryNote,
+    }),
+    800,
+    "medium",
+  );
+  // The interviewer's short reaction is spoken together with the next question.
+  const nextQuestion = joinReaction(reaction, r.nextQuestion);
+  // Fixed mode always speaks the interview language; smart mode trusts the model but checks the script.
+  const language = input.ctx.languageMode === "fixed" ? input.ctx.language : nextQuestion ? scriptLanguage(nextQuestion) : (responseLanguage ?? input.ctx.language);
+  return { ...r, nextQuestion, responseLanguage: language };
+}
+
 export async function evaluateTurn(input: TurnInput): Promise<TurnResult> {
-  const result = config.mockAI
-    ? await mockTurn(input)
-    : await ask(TurnSchema, turnPrompt(input.ctx, input.history, input.question, input.currentKind, input.answer, input.questionNumber, input.consecutiveFollowUps), 800, "medium").then(
-        // The interviewer's short reaction is spoken together with the next question.
-        ({ reaction, ...r }) => ({ ...r, nextQuestion: joinReaction(reaction, r.nextQuestion) }),
-      );
+  let result: TurnResult;
+  if (config.mockAI) result = { ...(await mockTurn(input)), responseLanguage: input.ctx.language };
+  else {
+    result = await llmTurn(input);
+    // An explicit "talk to me in English/Arabic" must be honoured: retry once if the question came back in the other script.
+    const wanted = input.ctx.languageMode === "smart" ? input.requestedLanguage : null;
+    const wrong = wanted && result.nextQuestion && (wanted === "en" ? result.responseLanguage !== "en" : result.responseLanguage === "en");
+    if (wrong) result = await llmTurn(input, `IMPORTANT: your previous attempt ignored the request. Write the reaction and question entirely in ${wanted === "en" ? "English" : "Arabic"}.`);
+  }
 
   // The server, not the model, has the final word on interview length.
   const isLast = input.questionNumber >= input.ctx.maxQuestions;

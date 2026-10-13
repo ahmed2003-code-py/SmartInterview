@@ -47,6 +47,24 @@ How one answer is handled:
 
 The job description is treated as untrusted data: it is wrapped in tags, and the model is told never to follow instructions inside it.
 
+While recording, the student's message shows a live audio-level meter and, in browsers with built-in speech recognition (e.g. Chrome), **provisional captions**. These are display-only and never submitted; after Stop they're replaced by the server transcript, which is exactly what gets evaluated.
+
+**Language modes:** Arabic, English, or **Smart / bilingual**. In Smart mode the interviewer follows the student: answer in English and it asks in English, answer in Egyptian Arabic and it answers in kind, keeping English terms. An explicit request ("ممكن السؤال الجاي بالإنجليزي؟", "Please continue in Arabic") always wins. Each question stores its language, which selects the voice: English uses the browser voice; Arabic or mixed uses ElevenLabs.
+
+### Speech-to-text benchmark (Groq vs Gemini)
+
+`backend/scripts/stt-benchmark.ts` sends the **same audio bytes** to Groq `whisper-large-v3` and Gemini, and scores CER/WER against reference transcripts. It ran on 17 real-speech samples where both succeeded: real Egyptian interview answers with natural code-switching (ArzEn corpus), podcast clips, and Egyptian dialect.
+
+| | Groq whisper-large-v3 | Gemini 2.5 Flash |
+|---|---|---|
+| Egyptian Arabic CER | 19.8% | **1.2%** |
+| Mixed Arabic/English CER | 29.0% | **17.5%** |
+| English terms kept in English | **21/42** | 2/42 (writes them in Arabic letters, e.g. "الفيلينجز") |
+| Median / worst latency | **0.5 s / 1.5 s** | 1.75 s / 35 s |
+| Free-tier quota | ample | **20 requests per day per project** |
+
+Groq stays primary: it keeps English terms in English, it's 3.5× faster, and the Gemini free tier only allows about 3 interviews a day. Gemini is the automatic fallback. With a paid Gemini plan, `STT_PROVIDER=gemini` gives much better Egyptian-Arabic accuracy.
+
 ## Local setup
 
 Requirements: Node.js 22 and Docker (used only for local PostgreSQL).
@@ -83,6 +101,8 @@ GROQ_API_KEY=gsk_...
 | `ELEVENLABS_API_KEY` | for Arabic voice | Secret, backend only. Without it Arabic falls back to browser voice / text |
 | `ELEVENLABS_VOICE_ID` / `ELEVENLABS_MODEL_ID` | | Defaults: `XrExE9yKIg1WjnnlVkGX` (Matilda, premade, works on the free plan) / `eleven_v4_turbo` |
 | `GROQ_STT_MODEL` / `LLM_MODEL` | | Defaults: `whisper-large-v3` / `openai/gpt-oss-120b` |
+| `STT_PROVIDER` | | `groq` (default) or `gemini`. The other provider is used automatically if the primary fails |
+| `GEMINI_API_KEY` / `GEMINI_STT_MODEL` | | Optional Gemini STT (default model `gemini-2.5-flash`). Backend only |
 | `STT_DEBUG` | | `true` logs safe STT metadata (size, duration, language, model) in production |
 
 ## Railway deployment

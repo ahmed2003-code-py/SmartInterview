@@ -9,7 +9,7 @@ import { ScoreBars, CRITERIA_ORDER } from "@/features/report/ScoreBars";
 import { useFetch } from "@/hooks/useFetch";
 import { api, type InterviewDTO, type QuestionDTO } from "@/lib/api";
 import { useI18n } from "@/i18n";
-import { cn, scoreBand, scoreTone } from "@/lib/utils";
+import { cn, scoreBand, scoreTone, textDir } from "@/lib/utils";
 
 
 function ListBlock({ title, items, marker, tone }: { title: string; items: string[]; marker: string; tone: string }) {
@@ -44,7 +44,7 @@ function QuestionItem({ q, index }: { q: QuestionDTO; index: number }) {
               {d.room.followUp}
             </Badge>
           )}
-          <span className="block text-[15px] leading-relaxed font-medium" dir="auto">
+          <span className="block text-[15px] leading-relaxed font-medium" dir={textDir(q.text)}>
             {q.text}
           </span>
         </span>
@@ -55,7 +55,7 @@ function QuestionItem({ q, index }: { q: QuestionDTO; index: number }) {
         <div className="space-y-5 px-4 pb-6 sm:ps-15 sm:pe-5">
           <div>
             <p className="text-xs font-medium text-subtle">{d.report.yourAnswer}</p>
-            <p className="mt-1.5 border-s-2 border-border-strong ps-3 text-[15px] leading-relaxed text-muted" dir="auto">
+            <p className="mt-1.5 border-s-2 border-border-strong ps-3 text-[15px] leading-relaxed text-muted" dir={textDir(a.transcript)}>
               {a.transcript}
             </p>
           </div>
@@ -144,7 +144,7 @@ export default function Report() {
   const r = i.report;
   const band = scoreBand(r.overallScore);
   const answered = i.questions.filter((q) => q.answer);
-  const againParams = new URLSearchParams({ role: i.role.id, lang: i.language, difficulty: i.difficulty, length: i.length });
+  const againParams = new URLSearchParams({ role: i.role.id, lang: i.language, ...(i.languageMode === "smart" ? { mode: "smart" } : {}), difficulty: i.difficulty, length: i.length });
 
   return (
     <div className="animate-fade-up">

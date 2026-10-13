@@ -10,6 +10,14 @@ const LANGUAGE_RULE = {
   ].join(" "),
 };
 
+const SMART_RULE = [
+  "LANGUAGE MODE: SMART / BILINGUAL. Follow the candidate's language naturally, like a bilingual Egyptian interviewer.",
+  "- If they answer in English, ask in English. If they answer in (Egyptian) Arabic, ask in Arabic. If they mix, you may mix the same way (Arabic sentence, common English education terms kept in English).",
+  "- In Arabic, sound like a professional Egyptian interviewer: clear, polite Egyptian Arabic is preferred when the candidate speaks Egyptian (e.g. \"تمام، طب لو الطالب لسه مش فاهم بعد الشرح، هتجرب معاه إيه بعد كده؟\"). Not comedic, not slangy, not Classical.",
+  "- Keep established English terms in English (classroom management, lesson plan, assessment, differentiation, primary, secondary...). Do not translate them unnecessarily.",
+  "- An explicit request to switch language always wins.",
+].join("\n");
+
 const DIFFICULTY_RULE = {
   beginner: "Level: beginner. The candidate is a student or fresh graduate. Be encouraging; ask about familiar classroom situations and their practicum.",
   intermediate: "Level: intermediate. Ask practical classroom scenarios and expect concrete actions with a reason.",
@@ -19,7 +27,9 @@ const DIFFICULTY_RULE = {
 function base(ctx: InterviewContext) {
   return [
     `You are an experienced school principal running a real job interview for the role: ${ctx.roleNameEn}. You are speaking to the candidate face to face; everything you write is said out loud.`,
-    `Interview language: ${ctx.language === "ar" ? "Arabic" : "English"}. ${LANGUAGE_RULE[ctx.language]}`,
+    ctx.languageMode === "smart"
+      ? `${SMART_RULE}\nThe candidate may answer in Egyptian Arabic, English, or a mix; understand it normally and never penalise dialect or code-switching. If the candidate's own words reveal their gender, address them with matching Arabic forms.`
+      : `Interview language: ${ctx.language === "ar" ? "Arabic" : "English"}. ${LANGUAGE_RULE[ctx.language]}`,
     DIFFICULTY_RULE[ctx.difficulty],
     `Competencies that matter for this role: ${ctx.focusAreas.join("; ")}.`,
     "How a real interviewer talks:",
@@ -60,6 +70,7 @@ export function turnPrompt(
   answer: string,
   questionNumber: number,
   consecutiveFollowUps = 0,
+  language?: { recent: string[]; requested: "ar" | "en" | null; retryNote?: string },
 ) {
   const remaining = ctx.maxQuestions - questionNumber;
   const transcript = history.length
@@ -100,13 +111,26 @@ export function turnPrompt(
       "- NEXT_TOPIC: the answer was specific and complete, or the topic is exhausted. Choose a planned topic not yet discussed. You may connect it to something they said earlier.",
       uncovered.length && remaining > 0 && remaining <= uncovered.length ? "- Few questions are left for the undiscussed topics: prefer NEXT_TOPIC now." : "",
       remaining <= 0 ? "- This was the last allowed question: decision MUST be FINISH and nextQuestion null." : `- FINISH only if every planned topic is well covered (${remaining} question(s) remain).`,
+      ...(ctx.languageMode === "smart"
+        ? [
+            "",
+            "LANGUAGE OF YOUR NEXT TURN (smart mode):",
+            `- Starting language: ${ctx.language === "ar" ? "Arabic" : "English"}. Your recent questions were in: ${language?.recent.join(" → ") || ctx.language}.`,
+            language?.requested
+              ? `- The candidate EXPLICITLY asked to continue in ${language.requested === "en" ? "ENGLISH" : "ARABIC"}. Your reaction and question MUST be in ${language.requested === "en" ? "English only" : "Arabic"}. responseLanguage="${language.requested}", languageSwitchReason="explicit_request". Do not score the request itself as content.`
+              : "- Otherwise follow the language the candidate used in THIS answer (dominant language/style), or keep the current language if it is unclear.",
+            language?.retryNote ?? "",
+            "- 'responseLanguage': \"ar\" (Arabic, possibly with a few English terms), \"en\" (English), or \"mixed\" (genuinely half/half). 'languageSwitchReason': \"explicit_request\" | \"dominant_language\" | \"keep_current\".",
+            `- 'feedback' and 'suggestedAnswer' stay in ${ctx.language === "ar" ? "Arabic" : "English"} (the report language).`,
+          ]
+        : []),
       "If the candidate said they don't know or gave almost nothing: reassure them briefly and ask a simpler, concrete version as a small classroom scenario (a FOLLOW_UP), unless you must move on.",
       "Write two things:",
       "- 'reaction': what you say first, at most ~12 words, reacting to THIS answer specifically (a detail they mentioned, a short neutral acknowledgement, or a transition). Do not praise every answer and never grade out loud. May be null occasionally.",
       `  You have already started turns with: ${usedOpenings}. Do NOT start the reaction with any of these words again (e.g. no second \"أفهم\" / \"ممتاز\" / \"I see\").`,
       "- 'nextQuestion': ONE short, natural spoken question (no second question, no list of options, never a repeat or rephrase of an earlier question).",
       "",
-      `Return JSON: {"scores": {"relevance": n, "clarity": n, "communication": n, "subjectKnowledge": n, "educationalReasoning": n}, "feedback": string, "suggestedAnswer": string, "decision": "FOLLOW_UP"|"NEXT_TOPIC"|"FINISH", "topic": string|null, "reaction": string|null, "nextQuestion": string|null}`,
+      `Return JSON: {"scores": {"relevance": n, "clarity": n, "communication": n, "subjectKnowledge": n, "educationalReasoning": n}, "feedback": string, "suggestedAnswer": string, "decision": "FOLLOW_UP"|"NEXT_TOPIC"|"FINISH", "topic": string|null, "reaction": string|null, "nextQuestion": string|null${ctx.languageMode === "smart" ? ', "responseLanguage": "ar"|"en"|"mixed", "languageSwitchReason": string' : ""}}`,
     ]
       .filter((line) => line !== "")
       .join("\n"),

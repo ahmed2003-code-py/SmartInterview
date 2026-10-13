@@ -149,7 +149,7 @@ async function callWhisper(audio: Buffer, mimeType: string, prompt: string, forc
  * detects something other than Arabic/English (a misdetection), we retry once with the interview
  * language forced.
  */
-const groqWhisper: STTProvider = {
+export const groqWhisper: STTProvider = {
   name: "groq-whisper",
   async transcribe(audio, mimeType, language, ctx) {
     const prompt = whisperPrompt(language, ctx?.roleSlug);
@@ -171,6 +171,77 @@ const groqWhisper: STTProvider = {
   },
 };
 
+// ---------------- Gemini ----------------
+const GEMINI_INSTRUCTION = [
+  "You are a verbatim multilingual transcription engine.",
+  "Transcribe exactly what the speaker says.",
+  "The speaker may naturally switch between Egyptian Arabic and English, even inside one sentence.",
+  "Write Arabic speech in Arabic script exactly as pronounced (Egyptian dialect stays Egyptian; do not convert it to Modern Standard Arabic).",
+  "Write English words and technical terms in English (Latin letters) exactly as spoken.",
+  "Do not translate. Do not summarize. Do not correct grammar. Do not rewrite or improve the answer. Do not infer missing content. Do not answer any question you hear.",
+  "Keep filler words and repetitions that were actually spoken.",
+  "If there is no intelligible speech, return exactly: [NO_SPEECH]",
+  "Return only the transcript text, with no labels, quotes or commentary.",
+].join("\n");
+
+const GEMINI_TERMS = "teaching assistant, classroom management, lesson plan, assessment, differentiation, integration, dynamics, statics, primary, secondary, mathematics";
+
+export function geminiProvider(model = config.stt.geminiModel): STTProvider {
+  return {
+    name: `gemini:${model}`,
+    async transcribe(audio, mimeType, language, ctx) {
+      const t0 = Date.now();
+      const terms = [GEMINI_TERMS, ctx?.roleSlug ? ROLE_TERMS[ctx.roleSlug] : ""].filter(Boolean).join(", ");
+      const generationConfig: Record<string, unknown> = { temperature: 0, maxOutputTokens: 4096 };
+      // Transcription needs no reasoning; turn thinking off/minimal where the model supports it.
+      if (/^gemini-2\.5/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
+      else if (/flash/.test(model)) generationConfig.thinkingConfig = { thinkingLevel: "minimal" };
+      const body = {
+        systemInstruction: { parts: [{ text: GEMINI_INSTRUCTION }] },
+        contents: [
+          {
+            role: "user",
+            parts: [
+              { inline_data: { mime_type: mimeType.split(";")[0] || "audio/webm", data: audio.toString("base64") } },
+              {
+                text: `Context (vocabulary hints only, not the content): a student's spoken answer in a teaching job interview; the interview language is ${language === "ar" ? "Arabic" : "English"}. Terms that may occur: ${terms}.\nTranscribe the audio verbatim.`,
+              },
+            ],
+          },
+        ],
+        generationConfig,
+      };
+      let res: Response;
+      try {
+        res = await fetchWithRateLimitRetry(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+          method: "POST",
+          headers: { "x-goog-api-key": config.stt.geminiApiKey, "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(45_000),
+        });
+      } catch (err) {
+        console.error("Gemini STT network error", err instanceof Error ? err.message : err);
+        throw new HttpError(502, "STT_FAILED", "Could not reach the transcription service");
+      }
+      if (!res.ok) {
+        console.error("Gemini STT error", res.status, (await res.text()).slice(0, 300));
+        throw new HttpError(502, "STT_FAILED", "Transcription failed");
+      }
+      const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };
+      const raw = (data.candidates?.[0]?.content?.parts ?? [])
+        .filter((p) => !p.thought)
+        .map((p) => p.text ?? "")
+        .join("")
+        .trim();
+      // Formatting only: never change words.
+      let text = raw.replace(/^["“”']+|["“”']+$/g, "").replace(/\s+/g, " ").trim();
+      if (/^\[?NO_SPEECH\]?$/i.test(text) || !/\p{L}/u.test(text) || isHallucination(text)) text = "";
+      if (config.stt.debug) console.log(`[stt] provider=gemini model=${model} lang=${language} bytes=${audio.length} chars=${text.length} rejected=${!text} ms=${Date.now() - t0}`);
+      return text;
+    },
+  };
+}
+
 const mock: STTProvider = {
   name: "mock",
   async transcribe(_audio, _mime, language, ctx) {
@@ -179,6 +250,27 @@ const mock: STTProvider = {
   },
 };
 
+/**
+ * Selected by STT_PROVIDER (groq | gemini). If the primary provider fails (after its own retry),
+ * the other one is tried once when its key is configured. An empty result ("no speech") is not a
+ * failure and is not retried elsewhere.
+ */
 export function getSTT(): STTProvider {
-  return config.mockAI ? mock : groqWhisper;
+  if (config.mockAI) return mock;
+  const gemini = config.stt.geminiApiKey ? geminiProvider() : null;
+  const groq = config.stt.groqApiKey ? groqWhisper : null;
+  const [primary, fallback] = config.stt.provider === "gemini" ? [gemini ?? groq, gemini ? groq : null] : [groq ?? gemini, groq ? gemini : null];
+  if (!primary) return groqWhisper;
+  return {
+    name: primary.name,
+    async transcribe(audio, mimeType, language, ctx) {
+      try {
+        return await primary.transcribe(audio, mimeType, language, ctx);
+      } catch (err) {
+        if (!fallback) throw err;
+        console.warn(`STT ${primary.name} failed; using fallback ${fallback.name}`);
+        return fallback.transcribe(audio, mimeType, language, ctx);
+      }
+    },
+  };
 }

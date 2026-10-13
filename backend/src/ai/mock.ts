@@ -123,7 +123,7 @@ const FEEDBACK: Record<Lang, { good: string; short: string; better: string }> = 
   },
 };
 
-export async function mockTurn(input: TurnInput): Promise<TurnResult> {
+export async function mockTurn(input: TurnInput): Promise<Omit<TurnResult, "responseLanguage">> {
   await delay(900);
   const { ctx, history, answer, questionNumber } = input;
   const lang = ctx.language;

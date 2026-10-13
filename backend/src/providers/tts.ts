@@ -15,17 +15,31 @@ export function ttsConfigured() {
   return Boolean(config.tts.elevenLabsApiKey && config.tts.voiceId);
 }
 
-async function synthesize(text: string): Promise<Buffer> {
+/**
+ * Streams a question's audio to the client as ElevenLabs produces it, so playback starts after the
+ * first chunks instead of after the whole clip. The full clip is kept in the in-memory cache.
+ */
+export async function streamQuestionAudio(questionId: string, text: string, sink: { write(chunk: Buffer): void; end(): void }) {
+  if (!ttsConfigured()) throw new HttpError(503, "TTS_UNAVAILABLE", "Voice is not configured");
+  const hit = cache.get(questionId);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
+    sink.write(hit.audio);
+    return sink.end();
+  }
+  const pending = inflight.get(questionId);
+  if (pending) {
+    sink.write(await pending);
+    return sink.end();
+  }
   let res: Response;
   try {
-    res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(config.tts.voiceId)}?output_format=mp3_44100_64`, {
+    res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(config.tts.voiceId)}/stream?output_format=mp3_44100_64`, {
       method: "POST",
       headers: { "xi-api-key": config.tts.elevenLabsApiKey, "Content-Type": "application/json", Accept: "audio/mpeg" },
       body: JSON.stringify({
         text,
         model_id: config.tts.modelId,
         language_code: "ar",
-        // Calm, steady interviewer delivery.
         voice_settings: { stability: 0.6, similarity_boost: 0.75, style: 0, use_speaker_boost: true, speed: 0.95 },
       }),
       signal: AbortSignal.timeout(20_000),
@@ -34,27 +48,28 @@ async function synthesize(text: string): Promise<Buffer> {
     console.error("TTS network error", err instanceof Error ? err.message : err);
     throw new HttpError(503, "TTS_UNAVAILABLE", "Voice is not available right now");
   }
-  if (!res.ok) {
-    // Status only (401 bad key, 402/429 quota or rate limit); never log the key or the text.
-    console.error("TTS error", res.status, (await res.text()).slice(0, 200));
+  if (!res.ok || !res.body) {
+    console.error("TTS error", res.status, (await res.text().catch(() => "")).slice(0, 200));
     throw new HttpError(503, "TTS_UNAVAILABLE", "Voice is not available right now");
   }
-  return Buffer.from(await res.arrayBuffer());
-}
-
-/** Returns MP3 audio for a question, generating it at most once while cached. */
-export async function questionAudio(questionId: string, text: string): Promise<Buffer> {
-  if (!ttsConfigured()) throw new HttpError(503, "TTS_UNAVAILABLE", "Voice is not configured");
-  const hit = cache.get(questionId);
-  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.audio;
-  // Concurrent requests for the same question share one ElevenLabs call.
-  let job = inflight.get(questionId);
-  if (!job) {
-    job = synthesize(text).finally(() => inflight.delete(questionId));
-    inflight.set(questionId, job);
+  const chunks: Buffer[] = [];
+  let resolveFull!: (b: Buffer) => void;
+  const full = new Promise<Buffer>((r) => (resolveFull = r));
+  inflight.set(questionId, full);
+  try {
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      const b = Buffer.from(chunk);
+      chunks.push(b);
+      sink.write(b);
+    }
+  } finally {
+    const audio = Buffer.concat(chunks);
+    inflight.delete(questionId);
+    resolveFull(audio);
+    if (audio.length) {
+      cache.set(questionId, { audio, at: Date.now() });
+      while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
+    }
+    sink.end();
   }
-  const audio = await job;
-  cache.set(questionId, { audio, at: Date.now() });
-  while (cache.size > CACHE_MAX) cache.delete(cache.keys().next().value!);
-  return audio;
 }

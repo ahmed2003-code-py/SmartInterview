@@ -84,7 +84,8 @@ export default function Setup() {
   const roles = useFetch(() => api.get<{ roles: Role[] }>("/roles"), []);
 
   const [roleId, setRoleId] = useState<string | null>(params.get("role"));
-  const [language, setLanguage] = useState<Lang>((params.get("lang") as Lang) || lang);
+  // "smart" = bilingual: starts in the UI language, then the interviewer follows the student.
+  const [language, setLanguage] = useState<Lang | "smart">((params.get("mode") === "smart" ? "smart" : (params.get("lang") as Lang)) || lang);
   const [difficulty, setDifficulty] = useState<Difficulty>((params.get("difficulty") as Difficulty) || "beginner");
   const [length, setLength] = useState<Length>((params.get("length") as Length) || "quick");
   const [jd, setJd] = useState("");
@@ -97,7 +98,7 @@ export default function Setup() {
     if (!roleId) return;
     setBusy(true);
     try {
-      const { interview } = await api.post<{ interview: InterviewDTO }>("/interviews", { roleId, language, difficulty, length, jobDescription: jd.trim() || null });
+      const { interview } = await api.post<{ interview: InterviewDTO }>("/interviews", { roleId, language: language === "smart" ? lang : language, languageMode: language === "smart" ? "smart" : "fixed", difficulty, length, jobDescription: jd.trim() || null });
       navigate(`/interviews/${interview.id}`, { state: { autoStart: true } });
     } catch (err) {
       const msg = err instanceof ApiError && err.code === "NETWORK_ERROR" ? d.room.errors.network : err instanceof ApiError && err.code === "AI_FAILED" ? d.room.errors.aiFailed : d.room.errors.generic;
@@ -108,7 +109,7 @@ export default function Setup() {
 
   const summary: [string, string][] = [
     [d.setup.role, role ? roleName(role) : "—"],
-    [d.setup.language, d.langs[language]],
+    [d.setup.language, language === "smart" ? d.setup.smart : d.langs[language]],
     [d.setup.difficulty, d.levels[difficulty]],
     [d.setup.length, d.lengthHints[length]],
   ];
@@ -134,7 +135,7 @@ export default function Setup() {
             )}
           </Section>
 
-          <Section title={d.setup.language} hint={d.setup.languageHint}>
+          <Section title={d.setup.language}>
             <Segmented
               label={d.setup.language}
               value={language}
@@ -142,8 +143,10 @@ export default function Setup() {
               options={[
                 { value: "ar", label: "العربية" },
                 { value: "en", label: "English" },
+                { value: "smart", label: d.setup.smart },
               ]}
             />
+            <p className="mt-3 text-sm text-muted">{language === "smart" ? d.setup.smartHint : d.setup.languageHint}</p>
           </Section>
 
           <Section title={d.setup.difficulty}>

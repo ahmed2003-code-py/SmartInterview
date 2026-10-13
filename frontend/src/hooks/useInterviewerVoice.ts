@@ -4,6 +4,8 @@ import { useSpeech } from "./useSpeech";
 export interface SpokenQuestion {
   id: string;
   text: string;
+  /** Language the question is in. English → browser voice; Arabic or mixed → ElevenLabs. */
+  language: "ar" | "en" | "mixed";
 }
 
 /**
@@ -14,16 +16,16 @@ export interface SpokenQuestion {
  * Only one voice ever plays: every new playback cancels the previous one, and a slow audio
  * download for an older question is dropped instead of played.
  */
-export function useInterviewerVoice(lang: "en" | "ar", interviewId: string | undefined, arabicVoice: boolean) {
-  const browser = useSpeech(lang);
+export function useInterviewerVoice(interviewId: string | undefined, arabicVoice: boolean, onVoiceStart?: () => void) {
+  const browserEn = useSpeech("en");
+  const browserAr = useSpeech("ar");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const finishRef = useRef<(() => void) | null>(null);
-  const urls = useRef(new Map<string, string>()); // in-memory only, per page visit
   const tokenRef = useRef(0);
   const aliveRef = useRef(true);
   const [remoteBroken, setRemoteBroken] = useState(false);
   const [notice, setNotice] = useState(false);
-  const useRemote = lang === "ar" && arabicVoice && !remoteBroken;
+  const remoteAvailable = arabicVoice && !remoteBroken;
 
   const stopAudio = useCallback(() => {
     const a = audioRef.current;
@@ -41,33 +43,27 @@ export function useInterviewerVoice(lang: "en" | "ar", interviewId: string | und
   const cancel = useCallback(() => {
     tokenRef.current++;
     stopAudio();
-    browser.cancel();
-  }, [stopAudio, browser]);
+    browserEn.cancel();
+    browserAr.cancel();
+  }, [stopAudio, browserEn, browserAr]);
 
   useEffect(() => {
     aliveRef.current = true;
-    const cached = urls.current;
     return () => {
       aliveRef.current = false;
       tokenRef.current++;
       stopAudio();
-      cached.forEach((u) => URL.revokeObjectURL(u));
-      cached.clear();
     };
   }, [stopAudio]);
 
   const playRemote = useCallback(
     async (q: SpokenQuestion, token: number) => {
-      let url = urls.current.get(q.id);
-      if (!url) {
-        const res = await fetch(`/api/interviews/${interviewId}/questions/${q.id}/audio`, { credentials: "include" });
-        if (!res.ok) throw Object.assign(new Error("tts"), { remote: true });
-        url = URL.createObjectURL(await res.blob());
-        urls.current.set(q.id, url);
-      }
-      if (token !== tokenRef.current || !aliveRef.current) return; // superseded while downloading
+      if (token !== tokenRef.current || !aliveRef.current) return;
+      // The backend streams ElevenLabs audio, so playback starts with the first chunks.
+      // Replays hit the browser cache / the server's in-memory cache (no new ElevenLabs call).
       await new Promise<void>((resolve, reject) => {
-        const a = new Audio(url);
+        const a = new Audio(`/api/interviews/${interviewId}/questions/${q.id}/audio`);
+        a.preload = "auto";
         audioRef.current = a;
         let safety = 0;
         const done = () => {
@@ -78,15 +74,17 @@ export function useInterviewerVoice(lang: "en" | "ar", interviewId: string | und
         };
         finishRef.current = done;
         a.onended = done;
-        a.onerror = () => reject(Object.assign(new Error("play"), { remote: true }));
-        a.onloadedmetadata = () => {
-          // Never wait forever if "ended" doesn't fire.
-          safety = window.setTimeout(done, (Number.isFinite(a.duration) ? a.duration : 30) * 1000 + 3000);
+        a.onerror = () => reject(Object.assign(new Error("tts"), { remote: true }));
+        a.onplaying = () => {
+          onVoiceStart?.();
+          // Never wait forever if "ended" doesn't fire (duration may be unknown while streaming).
+          window.clearTimeout(safety);
+          safety = window.setTimeout(done, (Number.isFinite(a.duration) ? a.duration : 45) * 1000 + 3000);
         };
         a.play().catch((err) => reject(err));
       });
     },
-    [interviewId],
+    [interviewId, onVoiceStart],
   );
 
   /** Speaks a question. Always resolves, even when no voice is available. */
@@ -95,7 +93,8 @@ export function useInterviewerVoice(lang: "en" | "ar", interviewId: string | und
       cancel();
       const token = tokenRef.current;
       if (!aliveRef.current) return;
-      if (useRemote && interviewId) {
+      const english = q.language === "en";
+      if (!english && remoteAvailable && interviewId) {
         try {
           await playRemote(q, token);
           return;
@@ -110,15 +109,17 @@ export function useInterviewerVoice(lang: "en" | "ar", interviewId: string | und
         }
       }
       if (token !== tokenRef.current || !aliveRef.current) return;
-      await browser.speak(q.text);
+      onVoiceStart?.();
+      await (english ? browserEn : browserAr).speak(q.text);
     },
-    [cancel, useRemote, interviewId, playRemote, browser],
+    [cancel, remoteAvailable, interviewId, playRemote, browserEn, browserAr],
   );
 
   return {
     speak,
     cancel,
-    supported: useRemote || browser.supported,
+    /** Whether a question in this language can be heard. */
+    canSpeak: (language: SpokenQuestion["language"]) => (language === "en" ? browserEn.supported : remoteAvailable || browserAr.supported),
     /** True once if the Arabic voice service failed and we fell back. */
     notice,
     dismissNotice: () => setNotice(false),

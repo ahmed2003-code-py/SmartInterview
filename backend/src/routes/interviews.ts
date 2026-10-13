@@ -6,7 +6,7 @@ import { config } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
 import { HttpError } from "../middleware/errors.js";
 import { getSTT, type Lang } from "../providers/stt.js";
-import { questionAudio } from "../providers/tts.js";
+import { streamQuestionAudio, ttsConfigured } from "../providers/tts.js";
 import * as interviews from "../services/interviews.js";
 
 export const interviewsRouter = Router();
@@ -45,6 +45,7 @@ function looksLikeAudio(buf: Buffer) {
 const CreateSchema = z.object({
   roleId: z.string().min(1),
   language: z.enum(["en", "ar"]),
+  languageMode: z.enum(["fixed", "smart"]).default("fixed"),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]),
   length: z.enum(["quick", "standard", "full"]),
   jobDescription: z.string().max(10_000).optional().nullable(),
@@ -82,17 +83,24 @@ interviewsRouter.post("/:id/transcribe", aiLimiter, upload.single("audio"), asyn
   const voicedSec = Number(req.body?.voicedSec);
   if (Number.isFinite(voicedSec) && voicedSec < 0.3) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
   const durationSec = Number(req.body?.durationSec);
-  const text = await getSTT().transcribe(req.file.buffer, req.file.mimetype, interview.language as Lang, {
+  const t0 = Date.now();
+  const stt = getSTT();
+  const text = await stt.transcribe(req.file.buffer, req.file.mimetype, interview.language as Lang, {
     roleSlug: interview.role.slug,
     question: interview.questions[0]?.text,
     durationSec: Number.isFinite(durationSec) ? durationSec : undefined,
   });
+  // Development timing (standard header; not shown to students).
+  res.set("Server-Timing", `stt;dur=${Date.now() - t0};desc="${stt.name}"`);
   if (!text) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
   res.json({ transcript: text.slice(0, config.limits.maxAnswerChars) });
 });
 
 interviewsRouter.post("/:id/answers", aiLimiter, async (req, res) => {
-  res.json(await interviews.submitAnswer(req.userId!, req.params.id as string, AnswerSchema.parse(req.body)));
+  const t0 = Date.now();
+  const result = await interviews.submitAnswer(req.userId!, req.params.id as string, AnswerSchema.parse(req.body));
+  res.set("Server-Timing", `ai;dur=${Date.now() - t0}`);
+  res.json(result);
 });
 
 interviewsRouter.post("/:id/finish", aiLimiter, async (req, res) => {
@@ -112,8 +120,22 @@ const ttsLimiter = rateLimit({
 
 interviewsRouter.get("/:id/questions/:questionId/audio", ttsLimiter, async (req, res) => {
   const question = await interviews.findOwnedQuestion(req.userId!, req.params.id as string, req.params.questionId as string);
-  if (question.interview.language !== "ar") throw new HttpError(400, "TTS_NOT_USED", "Browser voice is used for this language");
-  const audio = await questionAudio(question.id, question.text);
-  res.set({ "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=3600", "Content-Length": String(audio.length) });
-  res.send(audio);
+  // The voice follows the language each question was actually asked in (smart mode can switch).
+  if ((question.language ?? question.interview.language) === "en") throw new HttpError(400, "TTS_NOT_USED", "Browser voice is used for English");
+  if (!ttsConfigured()) throw new HttpError(503, "TTS_UNAVAILABLE", "Voice is not configured");
+  let started = false;
+  const t0 = Date.now();
+  await streamQuestionAudio(question.id, question.text, {
+    write(chunk) {
+      if (!started) {
+        started = true;
+        res.set({ "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=3600", "Server-Timing": `tts-first-byte;dur=${Date.now() - t0}` });
+      }
+      res.write(chunk);
+    },
+    end() {
+      if (started) res.end();
+      else res.status(503).json({ error: "TTS_UNAVAILABLE", message: "Voice is not available right now" });
+    },
+  });
 });
