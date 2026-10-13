@@ -28,6 +28,30 @@ model User {
   avatarUpdatedAt DateTime?
   /// App + interview preferences: theme, uiLanguage, interviewLanguage, difficulty, length, autoPlayVoice, captions, reducedMotion
   preferences     Json?
+
+  // Confirmed profile background (entered by the user or applied by them from their CV)
+  currentRole     String?
+  /// [{ degree, institution, field?, years? }]
+  education       Json?
+  /// [{ title, organization?, period?, summary? }]
+  experience      Json?
+  /// [{ name, summary? }]
+  projects        Json?
+  skills          String[]  @default([])
+  certifications  String[]  @default([])
+  languages       String[]  @default([])
+
+  // Primary CV. The file itself is never stored.
+  cvFileName      String?
+  cvUpdatedAt     DateTime?
+  /// "ready" | "failed" (text read, structured extraction failed: Retry is possible)
+  cvStatus        String?
+  /// Extracted text, kept ONLY while extraction failed so it can be retried; cleared on success / removal.
+  cvText          String?
+  /// Latest structured extraction (CV-derived, not yet necessarily confirmed by the user)
+  cvExtract       Json?
+  /// Condensed, contact-free background built from the extraction; used as interview context.
+  cvProfile       String?
 }
 
 model Role {

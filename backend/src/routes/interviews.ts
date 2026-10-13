@@ -54,6 +54,7 @@ const CreateSchema = z.object({
   length: z.enum(["quick", "standard", "full"]),
   jobDescription: z.string().max(10_000).optional().nullable(),
   cvProfile: z.string().max(2_000).optional().nullable(),
+  useProfileCv: z.boolean().optional(),
 });
 
 const AnswerSchema = z.object({

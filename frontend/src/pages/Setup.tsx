@@ -177,6 +177,7 @@ export default function Setup() {
   const [jdOpen, setJdOpen] = useState(false);
   const [jd, setJd] = useState("");
   const [cv, setCv] = useState<CvState>({ status: "idle" });
+  const [useProfileCv, setUseProfileCv] = useState(true);
   const [busy, setBusy] = useState(false);
 
   // Once suggestions load: preselect a "Practice again" role, or link a profile target role to its suggestion.
@@ -206,6 +207,8 @@ export default function Setup() {
         length,
         jobDescription: jd.trim() || null,
         cvProfile: cv.status === "ready" ? cv.profile : null,
+        // An interview-specific CV wins; otherwise the server uses the profile CV if the student kept it on.
+        useProfileCv: useProfileCv && cv.status !== "ready",
       });
       navigate(`/interviews/${interview.id}`, { state: { autoStart: true } });
     } catch (err) {
@@ -216,7 +219,8 @@ export default function Setup() {
   }
 
   const languageLabel = language === "smart" ? d.setup.smart : d.langs[language];
-  const extras = [cv.status === "ready" ? d.setup.cvAdded : null, jd.trim() ? d.setup.jdAdded : null].filter(Boolean) as string[];
+  const profileCvOn = Boolean(user?.cv && user.cv.status === "ready" && useProfileCv && cv.status === "idle");
+  const extras = [cv.status === "ready" || profileCvOn ? d.setup.cvAdded : null, jd.trim() ? d.setup.jdAdded : null].filter(Boolean) as string[];
   const summaryLine = `${d.levels[difficulty]} · ${languageLabel} · ${fmt(d.setup.questions, { n: QUESTION_COUNT[length] })}`;
 
   const startButton = (
@@ -251,7 +255,41 @@ export default function Setup() {
 
           <Section step={2} title={d.setup.stepPersonalize}>
             <div className="grid gap-3 sm:grid-cols-2">
-              <CvUpload cv={cv} setCv={setCv} />
+              {profileCvOn ? (
+                <div className="flex h-full min-h-[5.5rem] flex-col justify-center rounded-xl border border-success/30 bg-surface px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-success-soft text-success">
+                      <FileText className="size-5" strokeWidth={1.75} />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-sm font-medium">
+                        <Check className="size-3.5 text-success" />
+                        {d.profileCv.setupUsing}
+                      </p>
+                      <p className="t-caption truncate" dir="auto">
+                        {user!.cv!.fileName}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="-ms-2 mt-1.5 flex flex-wrap gap-1">
+                    <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => setUseProfileCv(false)}>
+                      {d.profileCv.setupDifferent}
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-7 px-2 text-muted" onClick={() => setUseProfileCv(false)}>
+                      {d.profileCv.setupSkip}
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="h-full">
+                  <CvUpload cv={cv} setCv={setCv} />
+                  {user?.cv?.status === "ready" && !useProfileCv && cv.status === "idle" && (
+                    <button type="button" onClick={() => setUseProfileCv(true)} className="mt-2 text-[13px] font-medium text-primary hover:underline">
+                      {d.profileCv.setupUseProfile}
+                    </button>
+                  )}
+                </div>
+              )}
               {!(jdOpen || jd) && (
                 <button
                   type="button"

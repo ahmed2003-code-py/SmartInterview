@@ -20,9 +20,20 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   }
   if (err instanceof multer.MulterError) {
     const tooLarge = err.code === "LIMIT_FILE_SIZE";
-    res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? "AUDIO_TOO_LARGE" : "UPLOAD_ERROR", message: err.message });
+    res.status(tooLarge ? 413 : 400).json({ error: tooLarge ? "FILE_TOO_LARGE" : "UPLOAD_ERROR", message: tooLarge ? "File is too large" : "Upload failed" });
     return;
   }
-  console.error(err);
+  // Malformed or oversized JSON bodies (body-parser errors) are the client's fault, not a crash.
+  const type = (err as { type?: string })?.type;
+  if (type === "entity.parse.failed") {
+    res.status(400).json({ error: "INVALID_JSON", message: "Malformed request" });
+    return;
+  }
+  if (type === "entity.too.large") {
+    res.status(413).json({ error: "PAYLOAD_TOO_LARGE", message: "Request is too large" });
+    return;
+  }
+  // Log the error type and first line only: database errors can echo query values (answers, CV text).
+  console.error("Unhandled error", err instanceof Error ? `${err.name}: ${err.message.split("\n")[0].slice(0, 200)}` : typeof err);
   res.status(500).json({ error: "SERVER_ERROR", message: "Something went wrong" });
 };

@@ -309,6 +309,7 @@ const mock: STTProvider = {
 
 /** Gemini free tier has small quotas; while it is out of quota we don't spend a round trip on it. */
 let geminiPausedUntil = 0;
+export const _setGeminiPause = (until: number) => (geminiPausedUntil = until); // tests only
 
 /**
  * Selected by STT_PROVIDER (groq | gemini), with the other provider as fallback when its key exists.
@@ -326,6 +327,11 @@ export function getSTT(): STTProvider {
   const groq = config.stt.groqApiKey ? groqWhisper : null;
   const [primary, fallback] = config.stt.provider === "gemini" ? [gemini ?? groq, gemini ? groq : null] : [groq ?? gemini, groq ? gemini : null];
   if (!primary) return groqWhisper;
+  return combineProviders(primary, fallback);
+}
+
+/** Primary + fallback with quota skip, immediate fallback on error and a hedge for slow primaries. */
+export function combineProviders(primary: STTProvider, fallback: STTProvider | null, hedgeBaseMs = 4_000): STTProvider {
   return {
     name: primary.name,
     async transcribe(audio, mimeType, language, ctx = {}) {
@@ -338,7 +344,7 @@ export function getSTT(): STTProvider {
 
       const primaryAbort = new AbortController();
       const fallbackAbort = new AbortController();
-      const hedgeMs = Math.round(4_000 + audio.length / 160); // ~4s + 50ms per audio second (8 KB/s opus)
+      const hedgeMs = Math.round(hedgeBaseMs + audio.length / 160); // ~4s + 50ms per audio second (8 KB/s opus)
       return new Promise<string>((resolve, reject) => {
         let settled = false;
         let fallbackStarted = false;

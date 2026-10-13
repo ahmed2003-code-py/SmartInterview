@@ -56,7 +56,7 @@ function jd(ctx: InterviewContext) {
   if (ctx.cvProfile)
     parts.push(
       `<candidate_cv>\n${ctx.cvProfile}\n</candidate_cv>`,
-      "The CV is CONTEXT, not the whole interview: across the interview, ask one or two natural questions that use something specific from it (e.g. \"You worked as a teaching assistant at... tell me about a time...\"), and keep the rest on role scenarios, subject knowledge and the job description. Never claim facts that are not in the CV.",
+      "The CV is CONTEXT, not the whole interview: across the interview, ask one or two natural questions that use something specific from it (e.g. \"You worked as a teaching assistant at... tell me about a time...\"), and keep the rest on role scenarios, subject knowledge and the job description. Never claim facts that are not in the CV. Do not keep repeating \"according to your CV\"; mention it naturally, at most once or twice.",
     );
   return parts.join("\n");
 }

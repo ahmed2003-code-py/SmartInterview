@@ -45,7 +45,28 @@ export interface Preferences {
   autoPlayVoice?: boolean;
   captions?: boolean;
   reducedMotion?: "system" | "reduce";
+  cvPromptDismissed?: boolean;
 }
+
+export interface EducationItem {
+  degree?: string;
+  institution?: string;
+  field?: string;
+  years?: string;
+}
+export interface ExperienceItem {
+  title?: string;
+  organization?: string;
+  period?: string;
+  summary?: string;
+}
+export interface ProjectItem {
+  name?: string;
+  summary?: string;
+}
+
+/** For each field the CV mentions: the current value, the CV's value, and the suggested choice. */
+export type CvProposal = Partial<Record<string, { current: unknown; fromCv: unknown; use: "cv" | "current" }>>;
 
 export interface User {
   id: string;
@@ -60,6 +81,15 @@ export interface User {
   /** Changes whenever the photo changes; null = no photo (initials are shown). */
   avatarVersion: number | null;
   preferences: Preferences;
+  currentRole: string | null;
+  education: EducationItem[];
+  experience: ExperienceItem[];
+  projects: ProjectItem[];
+  skills: string[];
+  certifications: string[];
+  languages: string[];
+  /** Primary CV (name and state only). */
+  cv: { fileName: string; updatedAt: string; status: "ready" | "failed" } | null;
 }
 
 /** A suggested role from the server (quick option in setup). */

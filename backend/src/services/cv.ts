@@ -36,7 +36,8 @@ const ProfileSchema = z.object({ profile: z.string().trim().min(10) });
  * The file and the raw text are never stored or logged; only the condensed profile is kept with the
  * interview. Contact details are dropped, and CV text is treated as untrusted data.
  */
-export async function buildCvProfile(buf: Buffer, fileName: string): Promise<string> {
+/** Validates the file by its bytes and returns its text (trimmed to a safe length). Never logs content. */
+export async function readCvText(buf: Buffer, fileName: string): Promise<string> {
   const kind = cvKind(buf, fileName);
   if (!kind) throw new HttpError(400, "CV_UNSUPPORTED", "Upload a PDF or DOCX file");
   let text: string;
@@ -46,7 +47,11 @@ export async function buildCvProfile(buf: Buffer, fileName: string): Promise<str
     throw new HttpError(422, "CV_UNREADABLE", "Couldn't read this CV");
   }
   if ((text.match(/\p{L}/gu) ?? []).length < 60) throw new HttpError(422, "CV_UNREADABLE", "Couldn't read this CV"); // e.g. scanned image PDF
-  text = text.slice(0, MAX_TEXT);
+  return text.slice(0, MAX_TEXT);
+}
+
+export async function buildCvProfile(buf: Buffer, fileName: string): Promise<string> {
+  const text = await readCvText(buf, fileName);
 
   if (config.mockAI) return text.replace(/\S+@\S+|\+?\d[\d\s-]{7,}\d/g, "").slice(0, MAX_PROFILE);
 

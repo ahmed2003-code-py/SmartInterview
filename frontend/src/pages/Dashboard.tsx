@@ -9,6 +9,7 @@ import { CRITERIA_ORDER, ScoreBars } from "@/features/report/ScoreBars";
 import { useFetch } from "@/hooks/useFetch";
 import { api, type Criterion, type InterviewSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { CvPrompt } from "@/features/profile/CvPrompt";
 import { useI18n } from "@/i18n";
 import { CountUp, Reveal, m, fadeUp, stagger } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -105,7 +106,7 @@ export default function Dashboard() {
         <div className="min-w-0">
           <h1 className="t-page text-balance">{fmt(isEmpty ? d.dashboard.welcomeNew : greeting, { name: firstName })}</h1>
           {!isEmpty && <p className="mt-1.5 text-[15px] text-muted">{loading ? " " : subtitle}</p>}
-          {!loading && user && !user.targetRole && (
+          {!loading && user && !user.targetRole && (user.cv || user.preferences.cvPromptDismissed) && (
             <Link to="/profile" className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
               {d.dashboard.recoProfile}
               <ArrowRight className="size-3.5 rtl:-scale-x-100" />
@@ -121,6 +122,8 @@ export default function Dashboard() {
           </Button>
         )}
       </div>
+
+      {!loading && <CvPrompt />}
 
       {error ? (
         <ErrorState className="mt-10" onRetry={reload} />

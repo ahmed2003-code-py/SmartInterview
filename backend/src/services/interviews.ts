@@ -5,8 +5,33 @@ import { HttpError } from "../middleware/errors.js";
 import { evaluateTurn, planInterview, writeReport } from "../ai/interviewer.js";
 import { CRITERIA, type Criteria, type InterviewContext, type SpokenLanguage } from "../ai/types.js";
 import { arabicShare, detectLanguageRequest } from "../ai/language.js";
+import { backgroundText } from "./profileCv.js";
 
 const MAX_DURATION_SEC = 2 * 60 * 60;
+
+// ---- Pure scoring / language rules (unit-tested) ----
+const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, Number.isFinite(n) ? n : lo));
+const pickCriteria = (a: Criteria): Criteria => Object.fromEntries(CRITERIA.map((c) => [c, a[c]])) as unknown as Criteria;
+
+/** One answer: the five 1-10 criteria → 0-100. */
+export function answerScore(scores: Criteria): number {
+  const avg = CRITERIA.reduce((sum, c) => sum + clamp(scores[c], 0, 10), 0) / CRITERIA.length;
+  return Math.round(avg * 10);
+}
+
+/** Interview: category averages (0-100) and overall (mean of answer scores, 0-100). */
+export function aggregateScores(answers: (Criteria & { score: number })[]) {
+  const n = Math.max(1, answers.length);
+  const categoryScores = Object.fromEntries(CRITERIA.map((c) => [c, Math.round((answers.reduce((s, a) => s + clamp(a[c], 0, 10), 0) / n) * 10)])) as Record<keyof Criteria, number>;
+  const overall = Math.round(answers.reduce((s, a) => s + clamp(a.score, 0, 100), 0) / n);
+  return { categoryScores, overall };
+}
+
+/** Fixed interviews: their language. Smart: the language that dominates the student's answers. */
+export function reportLanguageFor(mode: string, language: string, transcripts: string[]): "ar" | "en" {
+  if (mode === "smart") return arabicShare(transcripts.join(" ")) >= 0.5 ? "ar" : "en";
+  return language === "ar" ? "ar" : "en";
+}
 
 const detailInclude = {
   role: true,
@@ -112,6 +137,8 @@ export async function createInterview(
     length: InterviewLength;
     jobDescription?: string | null;
     cvProfile?: string | null;
+    /** Use the account's primary CV when no interview-specific CV was given. */
+    useProfileCv?: boolean;
   },
 ) {
   // A suggested role (by id), or any role the student typed. A typed name that matches a suggestion uses it.
@@ -126,7 +153,7 @@ export async function createInterview(
   const maxQuestions = QUESTION_COUNTS[input.length];
   const jobDescription = input.jobDescription?.trim().slice(0, config.limits.maxJobDescriptionChars) || null;
   const languageMode = input.languageMode ?? "fixed";
-  const cvProfile = input.cvProfile?.trim().slice(0, 2_000) || null;
+  const cvProfile = await candidateContext(userId, input.cvProfile, input.useProfileCv ?? true);
   const draft = { role, roleTitle, specialization, language: input.language, languageMode, difficulty: input.difficulty, maxQuestions, jobDescription, cvProfile, topics: [] } as unknown as Interview & { role: Role | null };
   const plan = await planInterview(contextFor(draft));
 
@@ -150,6 +177,35 @@ export async function createInterview(
     include: detailInclude,
   });
   return serialize(interview);
+}
+
+/**
+ * Background the interviewer may use, in priority order:
+ * 1. a CV uploaded for THIS interview; 2. the account's primary CV (unless switched off for this interview);
+ * 3. otherwise the profile background the user confirmed. Current-interview choices (role, specialization,
+ * job description) are separate fields and always win. Built server-side; nothing from the client is trusted here.
+ */
+export async function candidateContext(userId: string, interviewCv: string | null | undefined, useProfileCv: boolean): Promise<string | null> {
+  const own = interviewCv?.trim().slice(0, 2_000);
+  if (own) return own;
+  const u = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { cvProfile: true, headline: true, currentRole: true, experienceLevel: true, education: true, experience: true, projects: true, skills: true, certifications: true, languages: true },
+  });
+  if (!u) return null;
+  if (useProfileCv && u.cvProfile) return u.cvProfile.slice(0, 2_000);
+  const confirmed = backgroundText({
+    headline: u.headline ?? undefined,
+    currentRole: u.currentRole ?? undefined,
+    experienceLevel: (u.experienceLevel as never) ?? undefined,
+    education: (u.education as never) ?? [],
+    experience: (u.experience as never) ?? [],
+    projects: (u.projects as never) ?? [],
+    skills: u.skills,
+    certifications: u.certifications,
+    languages: u.languages,
+  });
+  return confirmed ? confirmed.slice(0, 2_000) : null;
 }
 
 export async function getInterview(userId: string, id: string) {
@@ -205,7 +261,7 @@ export async function submitAnswer(userId: string, id: string, input: { question
     })(),
   });
 
-  const avg = CRITERIA.reduce((sum, c) => sum + result.scores[c], 0) / CRITERIA.length;
+
   try {
     await prisma.$transaction(async (tx) => {
       await tx.answer.create({
@@ -214,7 +270,7 @@ export async function submitAnswer(userId: string, id: string, input: { question
           transcript: input.transcript,
           durationSec: input.durationSec,
           ...result.scores,
-          score: Math.round(avg * 10),
+          score: answerScore(result.scores),
           feedback: result.feedback,
           suggestedAnswer: result.suggestedAnswer,
         },
@@ -257,24 +313,14 @@ export async function finishInterview(userId: string, id: string) {
   }
 
   // Scores are computed here so they are always consistent with the per-answer scores.
-  const categoryScores = Object.fromEntries(
-    CRITERIA.map((c) => [c, Math.round((answered.reduce((s, q) => s + q.answer![c], 0) / answered.length) * 10)]),
-  ) as Record<keyof Criteria, number>;
-  const overall = Math.round(answered.reduce((s, q) => s + q.answer!.score, 0) / answered.length);
+  const { categoryScores, overall } = aggregateScores(answered.map((q) => ({ ...pickCriteria(q.answer!), score: q.answer!.score })));
 
   // Record the end time before the (possibly failing) AI call so a retry keeps the real duration.
   if (!interview.endedAt) await prisma.interview.update({ where: { id }, data: { endedAt, durationSec } });
 
   // Report language: fixed interviews use their language; smart interviews use the language that
   // dominates the student's answers. Every report text field (and label in the UI) follows it.
-  const reportLanguage: "ar" | "en" =
-    interview.languageMode === "smart"
-      ? arabicShare(answered.map((q) => q.answer!.transcript).join(" ")) >= 0.5
-        ? "ar"
-        : "en"
-      : interview.language === "ar"
-        ? "ar"
-        : "en";
+  const reportLanguage = reportLanguageFor(interview.languageMode, interview.language, answered.map((q) => q.answer!.transcript));
 
   const { questions: rewritten, ...text } = await writeReport(
     contextFor(interview),
