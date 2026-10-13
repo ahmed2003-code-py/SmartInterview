@@ -399,7 +399,7 @@ function Room({
               )}
             </p>
             <p className="truncate text-xs text-subtle">
-              {d.levels[interview.difficulty]} · {d.langs[interview.language]}
+              {d.levels[interview.difficulty]} · {interview.languageMode === "smart" ? d.setup.smart : d.langs[interview.language]}
             </p>
           </div>
           <div className="ms-auto flex shrink-0 items-center gap-1 sm:gap-2">

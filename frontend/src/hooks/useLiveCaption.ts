@@ -22,8 +22,15 @@ interface Recognition {
 }
 type RecognitionCtor = new () => Recognition;
 
-const Ctor: RecognitionCtor | undefined =
+// On phones (Android / iOS) the browser's recognizer plays a system "beep" every time it (re)starts
+// and takes the microphone away from the recorder, so captions are desktop-only.
+const isMobile =
+  typeof navigator !== "undefined" &&
+  ((navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData?.mobile === true || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent));
+
+const AnyCtor: RecognitionCtor | undefined =
   typeof window !== "undefined" ? ((window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: RecognitionCtor }).webkitSpeechRecognition) : undefined;
+const Ctor: RecognitionCtor | undefined = isMobile ? undefined : AnyCtor;
 
 /**
  * Provisional, display-only captions while the student speaks (progressive enhancement).
@@ -35,6 +42,7 @@ export function useLiveCaption() {
   const recRef = useRef<Recognition | null>(null);
   const activeRef = useRef(false);
   const finalRef = useRef("");
+  const restartsRef = useRef(0);
 
   const stop = useCallback(() => {
     activeRef.current = false;
@@ -55,6 +63,7 @@ export function useLiveCaption() {
       stop();
       setText("");
       finalRef.current = "";
+      restartsRef.current = 0;
       if (!Ctor) return;
       activeRef.current = true;
       const begin = () => {
@@ -79,7 +88,8 @@ export function useLiveCaption() {
         };
         // Chrome ends recognition after pauses; keep listening while the answer is being recorded.
         r.onend = () => {
-          if (activeRef.current) window.setTimeout(begin, 150);
+          // Keep listening across pauses, but never loop endlessly.
+          if (activeRef.current && restartsRef.current++ < 20) window.setTimeout(begin, 150);
         };
         r.onerror = (e) => {
           if (e.error === "not-allowed" || e.error === "service-not-allowed" || e.error === "language-not-supported") activeRef.current = false;
