@@ -1,0 +1,158 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource/ibm-plex-sans-arabic/400.css";
+@import "@fontsource/ibm-plex-sans-arabic/500.css";
+@import "@fontsource/ibm-plex-sans-arabic/600.css";
+@import "@fontsource/ibm-plex-sans-arabic/700.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------- Design tokens ---------- */
+:root {
+  --bg: #ffffff;
+  --bg-subtle: #f6f7f9;
+  --surface: #ffffff;
+  --surface-2: #f2f4f7;
+  --text: #0e1525;
+  --text-muted: #566075;
+  --text-subtle: #868ea1;
+  --border: #e3e6ec;
+  --border-strong: #cbd1db;
+  --primary: #3d4edb;
+  --primary-hover: #3141c4;
+  --primary-fg: #ffffff;
+  --primary-soft: #eef0fd;
+  --primary-soft-text: #2f3db8;
+  --accent: #7a5af0;
+  --success: #12805c;
+  --success-soft: #e7f5ee;
+  --warning: #a8620a;
+  --warning-soft: #fdf3e1;
+  --danger: #c9372c;
+  --danger-soft: #fcebea;
+  --navy: #0b1226; /* fixed dark surface used in both themes (CTA band, auth panel) */
+  --ring: color-mix(in srgb, var(--primary) 40%, transparent);
+  --shadow-sm: 0 1px 2px rgb(14 21 37 / 0.05);
+  --shadow-md: 0 1px 2px rgb(14 21 37 / 0.04), 0 8px 24px -8px rgb(14 21 37 / 0.12);
+  --font: "Geist Variable", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #0a1020;
+  --bg-subtle: #0d1427;
+  --surface: #10182d;
+  --surface-2: #162039;
+  --text: #e8ecf5;
+  --text-muted: #9aa3b9;
+  --text-subtle: #6c7590;
+  --border: #1e2943;
+  --border-strong: #2b3756;
+  --primary: #5866f2;
+  --primary-hover: #6a77ff;
+  --primary-fg: #ffffff;
+  --primary-soft: #18204a;
+  --primary-soft-text: #aab3ff;
+  --accent: #9b85ff;
+  --success: #3cc48d;
+  --success-soft: #0f2a21;
+  --warning: #eeb04c;
+  --warning-soft: #2b2213;
+  --danger: #f2706a;
+  --danger-soft: #2e1619;
+  --navy: #070c1a;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.5);
+  color-scheme: dark;
+}
+
+:root:lang(ar) {
+  --font: "IBM Plex Sans Arabic", "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-subtle: var(--bg-subtle);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-fg: var(--text);
+  --color-muted: var(--text-muted);
+  --color-subtle: var(--text-subtle);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-fg: var(--primary-fg);
+  --color-primary-soft: var(--primary-soft);
+  --color-primary-soft-fg: var(--primary-soft-text);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-navy: var(--navy);
+  --font-sans: var(--font);
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+    scroll-padding-top: 5rem;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  :lang(ar) body {
+    line-height: 1.7;
+  }
+  /* Arabic script must never be letter-spaced. */
+  :lang(ar) * {
+    letter-spacing: 0 !important;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 25%, transparent);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+}
+
+/* ---------- Small motion primitives ---------- */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.45; }
+  100% { transform: scale(1.55); opacity: 0; }
+}
+@keyframes speak-bar {
+  0%, 100% { transform: scaleY(0.35); }
+  50% { transform: scaleY(1); }
+}
+.animate-fade-up { animation: fade-up 0.35s ease-out both; }
+.animate-pulse-ring { animation: pulse-ring 1.8s ease-out infinite; }
+.animate-speak-bar { animation: speak-bar 0.9s ease-in-out infinite; transform-origin: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
+}
