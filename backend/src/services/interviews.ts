@@ -234,7 +234,7 @@ export async function finishInterview(userId: string, id: string) {
 
   const { questions: rewritten, ...text } = await writeReport(
     contextFor(interview),
-    answered.map((q) => ({ question: q.text, answer: q.answer!.transcript, score: q.answer!.score, feedback: q.answer!.feedback })),
+    answered.map((q) => ({ question: q.text, answer: q.answer!.transcript, score: q.answer!.score, feedback: q.answer!.feedback, suggestedAnswer: q.answer!.suggestedAnswer })),
     categoryScores,
     overall,
     reportLanguage,

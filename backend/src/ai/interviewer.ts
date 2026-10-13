@@ -3,9 +3,9 @@ import { config } from "../config.js";
 import { chatJSON } from "../providers/llm.js";
 import { HttpError } from "../middleware/errors.js";
 import { mockPlan, mockReport, mockTurn } from "./mock.js";
-import { planPrompt, reportPrompt, turnPrompt } from "./prompts.js";
+import { notesRewritePrompt, planPrompt, reportPrompt, turnPrompt } from "./prompts.js";
 import type { Criteria, InterviewContext, PlanResult, ReportText, TurnInput, TurnResult } from "./types.js";
-import { scriptLanguage } from "./language.js";
+import { arabicShare, scriptLanguage } from "./language.js";
 
 const score = z.coerce.number().transform((n) => Math.max(1, Math.min(10, Math.round(n))));
 const text = (max: number) => z.string().trim().min(1).transform((s) => s.slice(0, max));
@@ -129,16 +129,22 @@ export async function evaluateTurn(input: TurnInput): Promise<TurnResult> {
 
 export async function writeReport(
   ctx: InterviewContext,
-  items: { question: string; answer: string; score: number; feedback: string }[],
+  items: { question: string; answer: string; score: number; feedback: string; suggestedAnswer: string }[],
   categoryScores: Record<keyof Criteria, number>,
   overall: number,
   reportLanguage: "ar" | "en",
 ): Promise<ReportText & { questions?: { feedback: string; suggestedAnswer: string }[] }> {
   if (config.mockAI) return mockReport({ ...ctx, language: reportLanguage }, categoryScores, overall);
-  // Per-question notes were written in the interview's starting language; in smart mode the report
-  // language can differ, so those notes are rewritten too (never mixed languages in one report).
-  const rewrite = reportLanguage !== ctx.language;
+  // Per-question notes are written turn by turn (in smart mode, in whichever language that turn
+  // used). Any note not already in the report language is rewritten, so one report never mixes languages.
+  const wrongLang = (t: string) => (reportLanguage === "ar" ? arabicShare(t) < 0.5 : arabicShare(t) > 0.15);
+  const rewrite = items.some((it) => wrongLang(it.feedback) || wrongLang(it.suggestedAnswer));
   const result = await ask(ReportSchema, reportPrompt(ctx, items, categoryScores, overall, reportLanguage, rewrite), rewrite ? 2200 : 900);
-  if (rewrite && result.questions?.length !== items.length) delete result.questions;
-  return result;
+  if (!rewrite) return { ...result, questions: undefined };
+  if (result.questions?.length === items.length) return result;
+  // The combined call dropped the notes: one smaller, dedicated call. Failing that, keep the originals.
+  const notes = items.map(({ feedback, suggestedAnswer }) => ({ feedback, suggestedAnswer }));
+  const NotesSchema = z.object({ questions: z.array(z.object({ feedback: text(600), suggestedAnswer: text(1000) })).length(items.length) });
+  const fixed = await ask(NotesSchema, notesRewritePrompt(ctx, notes, reportLanguage), 1800).catch(() => null);
+  return { ...result, questions: fixed?.questions };
 }

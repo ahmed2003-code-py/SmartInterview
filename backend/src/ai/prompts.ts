@@ -178,3 +178,15 @@ export function reportPrompt(
       .join("\n"),
   };
 }
+
+/** Rewrites per-question notes into the report language (used when the report call dropped them). */
+export function notesRewritePrompt(ctx: InterviewContext, notes: { feedback: string; suggestedAnswer: string }[], reportLanguage: "ar" | "en") {
+  return {
+    system: base(ctx),
+    user: [
+      `Rewrite each note below in ${reportLanguage === "ar" ? "clear, professional Modern Standard Arabic (not slang)" : "concise, professional English"}. Keep the meaning; do not add new content.`,
+      notes.map((n, i) => `${i + 1}. feedback: ${n.feedback}\n   suggestedAnswer: ${n.suggestedAnswer}`).join("\n"),
+      `Return JSON: {"questions": [{"feedback": string, "suggestedAnswer": string}]} with exactly ${notes.length} items, in order.`,
+    ].join("\n"),
+  };
+}
