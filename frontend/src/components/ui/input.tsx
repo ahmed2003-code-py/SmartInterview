@@ -2,14 +2,14 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode, type TextareaHTML
 import { cn } from "@/lib/utils";
 
 const field =
-  "w-full rounded-md border border-border-strong/80 bg-surface text-fg placeholder:text-subtle transition-colors outline-none hover:border-border-strong focus:border-primary focus:ring-3 focus:ring-primary/12 disabled:opacity-60 aria-invalid:border-danger aria-invalid:focus:ring-danger/15";
+  "w-full rounded-xl border border-border-strong/80 bg-surface text-fg shadow-sm placeholder:text-subtle transition-[border-color,box-shadow] duration-150 outline-none hover:border-border-strong focus:border-primary focus:ring-4 focus:ring-primary/10 disabled:opacity-60 aria-invalid:border-danger aria-invalid:focus:ring-danger/15";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...props }, ref) {
-  return <input ref={ref} className={cn(field, "h-10 px-3 text-sm", className)} {...props} />;
+  return <input ref={ref} className={cn(field, "h-11 px-3.5 text-base sm:text-sm", className)} {...props} />;
 });
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...props }, ref) {
-  return <textarea ref={ref} className={cn(field, "min-h-28 px-3 py-2.5 text-sm leading-relaxed resize-y", className)} {...props} />;
+  return <textarea ref={ref} className={cn(field, "min-h-28 px-3.5 py-2.5 text-base leading-relaxed resize-y sm:text-sm", className)} {...props} />;
 });
 
 export function Field({ label, htmlFor, hint, error, aside, children }: { label: ReactNode; htmlFor?: string; hint?: ReactNode; error?: string | null; aside?: ReactNode; children: ReactNode }) {

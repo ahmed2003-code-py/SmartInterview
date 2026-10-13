@@ -1,16 +1,17 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { ArrowRight, Check, FileText, Mic, Plus, Upload } from "lucide-react";
+import { ArrowRight, Briefcase, Check, FileText, Mic, Plus, UploadCloud, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/input";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Input, Textarea } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { ErrorState } from "@/components/ui/states";
 import { PageHeader } from "@/components/layout/PageHeader";
+import { RoleCombobox, type RoleTarget } from "@/features/setup/RoleCombobox";
 import { useFetch } from "@/hooks/useFetch";
 import { api, ApiError, type Difficulty, type InterviewDTO, type Length, type Role } from "@/lib/api";
 import { useI18n, type Lang } from "@/i18n";
+import { AnimatePresence, m } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 const DIFFICULTIES: Difficulty[] = ["beginner", "intermediate", "advanced"];
@@ -18,12 +19,13 @@ const LENGTHS: Length[] = ["quick", "standard", "full"];
 const QUESTION_COUNT: Record<Length, number> = { quick: 4, standard: 6, full: 10 };
 const JD_MAX = 2500;
 const CV_MAX = 5 * 1024 * 1024;
+const TEACHING = /teach|tutor|instructor|lecturer|kindergarten|معلم|مدرس|معيد|تدريس|رياض أطفال/i;
 
 function Section({ step, title, children }: { step: number; title: string; children: ReactNode }) {
   return (
     <section className="border-t border-border py-7 first:border-t-0 first:pt-0">
       <h2 className="t-section mb-4 flex items-center gap-2.5">
-        <span className="grid size-5 place-items-center rounded-full bg-surface-2 text-[11px] font-semibold text-muted tabular-nums">{step}</span>
+        <span className="grid size-5 place-items-center rounded-full bg-ink text-[11px] font-semibold text-ink-fg tabular-nums">{step}</span>
         {title}
       </h2>
       <div className="space-y-5">{children}</div>
@@ -31,48 +33,50 @@ function Section({ step, title, children }: { step: number; title: string; child
   );
 }
 
-function Field({ label, optional, hint, children }: { label: string; optional?: string; hint?: string; children: ReactNode }) {
+function Field({ label, optional, hint, children, htmlFor }: { label: string; optional?: string; hint?: string; children: ReactNode; htmlFor?: string }) {
   return (
     <div>
-      <div className="mb-2 flex items-baseline gap-2">
+      <label htmlFor={htmlFor} className="mb-2 flex items-baseline gap-2">
         <span className="t-label">{label}</span>
         {optional && <span className="t-caption">· {optional}</span>}
-      </div>
+      </label>
       {children}
       {hint && <p className="t-caption mt-2">{hint}</p>}
     </div>
   );
 }
 
-/** Compact segmented control for short single-choice settings. */
-function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label: string }) {
+/** Segmented control with a sliding selection pill. */
+function Segmented<T extends string>({ value, onChange, options, label, id }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label: string; id: string }) {
   return (
-    <div role="radiogroup" aria-label={label} className="grid w-full auto-cols-fr grid-flow-col rounded-lg border border-border bg-surface-2 p-1 sm:inline-grid sm:w-auto">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          role="radio"
-          aria-checked={value === o.value}
-          onClick={() => onChange(o.value)}
-          className={cn(
-            "h-9 rounded-md px-4 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-primary/25",
-            value === o.value ? "bg-surface font-medium text-fg shadow-sm ring-1 ring-border" : "text-muted hover:text-fg",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
+    <div role="radiogroup" aria-label={label} className="grid w-full auto-cols-fr grid-flow-col rounded-xl bg-surface-2 p-1 sm:inline-grid sm:w-auto">
+      {options.map((o) => {
+        const on = value === o.value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(o.value)}
+            className={cn("relative h-9 rounded-lg px-4 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-primary/25", on ? "font-medium text-fg" : "text-muted hover:text-fg")}
+          >
+            {on && <m.span layoutId={`seg-${id}`} className="absolute inset-0 rounded-lg bg-surface shadow-sm ring-1 ring-border" transition={{ type: "spring", bounce: 0.15, duration: 0.35 }} />}
+            <span className="relative">{o.label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 type CvState = { status: "idle" } | { status: "reading"; name: string } | { status: "ready"; name: string; profile: string } | { status: "error"; message: string };
 
-/** Optional CV: upload → server reads it → only a short profile is kept for the interview. */
+/** Optional CV: drop or browse → server reads it → only a short profile is kept for the interview. */
 function CvUpload({ cv, setCv }: { cv: CvState; setCv: (c: CvState) => void }) {
   const { d } = useI18n();
   const input = useRef<HTMLInputElement>(null);
+  const [drag, setDrag] = useState(false);
 
   async function upload(file: File) {
     if (file.size > CV_MAX) return setCv({ status: "error", message: d.setup.cvTooBig });
@@ -94,6 +98,7 @@ function CvUpload({ cv, setCv }: { cv: CvState; setCv: (c: CvState) => void }) {
       type="file"
       accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain"
       className="sr-only"
+      tabIndex={-1}
       aria-label={d.setup.cvUpload}
       onChange={(e) => {
         const f = e.target.files?.[0];
@@ -105,43 +110,59 @@ function CvUpload({ cv, setCv }: { cv: CvState; setCv: (c: CvState) => void }) {
 
   if (cv.status === "ready" || cv.status === "reading")
     return (
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-border bg-surface px-3.5 py-3">
-        <FileText className="size-5 shrink-0 text-subtle" strokeWidth={1.75} />
+      <div className={cn("flex h-full min-h-[5.5rem] items-center gap-3 rounded-xl border bg-surface px-4 py-3", cv.status === "ready" ? "border-success/30" : "border-border")}>
+        <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg", cv.status === "ready" ? "bg-success-soft text-success" : "bg-surface-2 text-muted")}>
+          {cv.status === "ready" ? <FileText className="size-5" strokeWidth={1.75} /> : <Spinner className="size-4" />}
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium" dir="auto">
+          <p className="truncate text-sm font-medium" dir="auto" title={cv.name}>
             {cv.name}
           </p>
           <p className={cn("mt-0.5 flex items-center gap-1.5 text-xs", cv.status === "ready" ? "text-success" : "text-muted")}>
-            {cv.status === "ready" ? <Check className="size-3.5" /> : <Spinner className="size-3" />}
+            {cv.status === "ready" && <Check className="size-3.5" />}
             {cv.status === "ready" ? d.setup.cvReady : d.setup.cvReading}
           </p>
+          {cv.status === "ready" && (
+            <div className="-ms-2 mt-1 flex gap-1">
+              <Button variant="ghost" size="sm" className="h-7 px-2" onClick={() => input.current?.click()}>
+                {d.setup.cvReplace}
+              </Button>
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-danger hover:bg-danger-soft hover:text-danger" onClick={() => setCv({ status: "idle" })}>
+                {d.setup.cvRemove}
+              </Button>
+            </div>
+          )}
         </div>
-        {cv.status === "ready" && (
-          <div className="flex shrink-0 gap-1">
-            <Button variant="ghost" size="sm" onClick={() => input.current?.click()}>
-              {d.setup.cvReplace}
-            </Button>
-            <Button variant="ghost" size="sm" className="text-danger hover:bg-danger-soft" onClick={() => setCv({ status: "idle" })}>
-              {d.setup.cvRemove}
-            </Button>
-          </div>
-        )}
         {picker}
       </div>
     );
 
   return (
-    <div>
+    <div className="h-full">
       <button
         type="button"
         onClick={() => input.current?.click()}
-        className="flex w-full items-center gap-3 rounded-lg border border-dashed border-border-strong bg-surface px-4 py-4 text-start transition-colors outline-none hover:border-fg/40 focus-visible:ring-3 focus-visible:ring-primary/25"
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDrag(true);
+        }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDrag(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f) upload(f);
+        }}
+        className={cn(
+          "flex h-full min-h-[5.5rem] w-full items-center gap-3 rounded-xl border border-dashed px-4 py-3 text-start transition-all outline-none focus-visible:ring-3 focus-visible:ring-primary/25",
+          drag ? "scale-[1.01] border-primary bg-primary-soft/50" : "border-border-strong bg-surface hover:border-primary/50 hover:bg-primary-soft/20",
+        )}
       >
-        <span className="grid size-9 shrink-0 place-items-center rounded-md bg-surface-2 text-muted">
-          <Upload className="size-4" />
+        <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg transition-colors", drag ? "bg-primary text-primary-fg" : "bg-surface-2 text-muted")}>
+          <UploadCloud className="size-5" strokeWidth={1.75} />
         </span>
-        <span>
-          <span className="block text-sm font-medium">{d.setup.cvUpload}</span>
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">{d.setup.cvDrop}</span>
           <span className="t-caption">{d.setup.cvTypes}</span>
         </span>
       </button>
@@ -161,7 +182,11 @@ export default function Setup() {
   const [params] = useSearchParams();
   const roles = useFetch(() => api.get<{ roles: Role[] }>("/roles"), []);
 
-  const [roleId, setRoleId] = useState<string | null>(params.get("role"));
+  const [target, setTarget] = useState<RoleTarget | null>(() => {
+    const title = params.get("roleTitle");
+    return title ? { roleId: null, title } : null;
+  });
+  const [specialization, setSpecialization] = useState(params.get("spec") ?? "");
   // "smart" = bilingual: starts in the UI language, then the interviewer follows the student.
   const [language, setLanguage] = useState<Lang | "smart">((params.get("mode") === "smart" ? "smart" : (params.get("lang") as Lang)) || lang);
   const [difficulty, setDifficulty] = useState<Difficulty>((params.get("difficulty") as Difficulty) || "beginner");
@@ -171,16 +196,24 @@ export default function Setup() {
   const [cv, setCv] = useState<CvState>({ status: "idle" });
   const [busy, setBusy] = useState(false);
 
-  const role = roles.data?.roles.find((r) => r.id === roleId);
-  const roleName = (r: Role) => (lang === "ar" ? r.nameAr : r.nameEn);
-  const canStart = Boolean(roleId) && cv.status !== "reading" && !busy;
+  // "Practice again" with a suggested role: preselect it once suggestions load.
+  const presetRole = params.get("role");
+  useEffect(() => {
+    const r = roles.data?.roles.find((x) => x.id === presetRole);
+    if (r && !target) setTarget({ roleId: r.id, title: lang === "ar" ? r.nameAr : r.nameEn });
+  }, [roles.data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedRole = roles.data?.roles.find((r) => r.id === target?.roleId);
+  const teaching = selectedRole ? (selectedRole.domain ?? "education") === "education" : TEACHING.test(target?.title ?? "");
+  const canStart = Boolean(target?.title) && cv.status !== "reading" && !busy;
 
   async function start() {
-    if (!roleId) return;
+    if (!target) return;
     setBusy(true);
     try {
       const { interview } = await api.post<{ interview: InterviewDTO }>("/interviews", {
-        roleId,
+        ...(target.roleId ? { roleId: target.roleId } : { roleTitle: target.title }),
+        specialization: specialization.trim() || null,
         language: language === "smart" ? lang : language,
         languageMode: language === "smart" ? "smart" : "fixed",
         difficulty,
@@ -208,61 +241,83 @@ export default function Setup() {
   );
 
   return (
-    <div className="animate-fade-up">
-      <PageHeader title={d.setup.title} />
+    <div className="mx-auto max-w-5xl">
+      <PageHeader title={d.setup.title} description={d.setup.subtitle} />
 
-      <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_280px] lg:gap-14">
+      <div className="mt-8 grid grid-cols-[minmax(0,1fr)] gap-10 lg:grid-cols-[minmax(0,1fr)_300px] lg:gap-12">
         <div>
           <Section step={1} title={d.setup.stepTarget}>
-            <Field label={d.setup.role}>
-              {roles.error ? (
-                <ErrorState onRetry={roles.reload} className="py-6" />
-              ) : (
-                <div role="radiogroup" aria-label={d.setup.role} className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {roles.loading || !roles.data
-                    ? Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-11" />)
-                    : roles.data.roles.map((r) => (
-                        <button
-                          key={r.id}
-                          type="button"
-                          role="radio"
-                          aria-checked={roleId === r.id}
-                          title={lang === "ar" ? r.descriptionAr : r.descriptionEn}
-                          onClick={() => setRoleId(r.id)}
-                          className={cn(
-                            "min-h-11 rounded-lg border px-3 py-2 text-start text-sm leading-snug transition-colors outline-none focus-visible:ring-3 focus-visible:ring-primary/25",
-                            roleId === r.id ? "border-primary bg-primary-soft/50 font-medium text-fg" : "border-border bg-surface text-fg hover:border-border-strong",
-                          )}
-                        >
-                          {roleName(r)}
-                        </button>
-                      ))}
-                </div>
-              )}
+            <Field label={d.setup.role} hint={target ? undefined : d.setup.roleHint}>
+              {roles.error ? <ErrorState onRetry={roles.reload} className="py-6" /> : <RoleCombobox roles={roles.data?.roles ?? []} loading={roles.loading} value={target} onChange={setTarget} />}
             </Field>
-
-            {jdOpen || jd ? (
-              <Field label={d.setup.jd} optional={d.setup.optional} hint={d.setup.jdHint}>
-                <Textarea value={jd} onChange={(e) => setJd(e.target.value.slice(0, JD_MAX))} placeholder={d.setup.jdPlaceholder} rows={4} dir="auto" aria-label={d.setup.jd} autoFocus={!jd} />
-              </Field>
-            ) : (
-              <button type="button" onClick={() => setJdOpen(true)} className="inline-flex min-h-9 items-center gap-1.5 text-sm font-medium text-muted hover:text-fg">
-                <Plus className="size-4" />
-                {d.setup.jd}
-                <span className="font-normal text-subtle">· {d.setup.optional}</span>
-              </button>
-            )}
+            <Field label={d.setup.specialization} optional={d.setup.optional} hint={d.setup.specializationHint} htmlFor="specialization">
+              <Input
+                id="specialization"
+                value={specialization}
+                onChange={(e) => setSpecialization(e.target.value.slice(0, 80))}
+                placeholder={teaching ? d.setup.specializationEdu : d.setup.specializationOther}
+                dir="auto"
+                autoComplete="off"
+                className="h-11 rounded-xl text-base sm:text-sm"
+              />
+            </Field>
           </Section>
 
           <Section step={2} title={d.setup.stepPersonalize}>
-            <Field label={d.setup.cv} optional={d.setup.optional} hint={cv.status === "idle" ? d.setup.cvHint : undefined}>
+            <div className="grid gap-3 sm:grid-cols-2">
               <CvUpload cv={cv} setCv={setCv} />
-            </Field>
+              {!(jdOpen || jd) && (
+                <button
+                  type="button"
+                  onClick={() => setJdOpen(true)}
+                  className="flex min-h-[5.5rem] w-full items-center gap-3 rounded-xl border border-dashed border-border-strong bg-surface px-4 py-3 text-start transition-all outline-none hover:border-primary/50 hover:bg-primary-soft/20 focus-visible:ring-3 focus-visible:ring-primary/25"
+                >
+                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-surface-2 text-muted">
+                    <Briefcase className="size-5" strokeWidth={1.75} />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1 text-sm font-medium">
+                      <Plus className="size-3.5" />
+                      {d.setup.jdAdd}
+                    </span>
+                    <span className="t-caption">{d.setup.jdHint}</span>
+                  </span>
+                </button>
+              )}
+            </div>
+            <AnimatePresence initial={false}>
+              {(jdOpen || jd) && (
+                <m.div key="jd" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="overflow-hidden">
+                  <div className="mb-2 flex items-center justify-between">
+                    <label htmlFor="jd" className="flex items-baseline gap-2">
+                      <span className="t-label">{d.setup.jd}</span>
+                      <span className="t-caption">· {d.setup.optional}</span>
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setJd("");
+                        setJdOpen(false);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-muted hover:bg-surface-2 hover:text-fg"
+                    >
+                      <X className="size-3.5" />
+                      {d.setup.jdRemove}
+                    </button>
+                  </div>
+                  <Textarea id="jd" value={jd} onChange={(e) => setJd(e.target.value.slice(0, JD_MAX))} placeholder={d.setup.jdPlaceholder} rows={5} dir="auto" autoFocus={!jd} className="rounded-xl" />
+                  <p className="t-caption mt-1.5 text-end tabular-nums">
+                    {jd.length} / {JD_MAX}
+                  </p>
+                </m.div>
+              )}
+            </AnimatePresence>
           </Section>
 
           <Section step={3} title={d.setup.stepPrefs}>
             <Field label={d.setup.language} hint={language === "smart" ? d.setup.smartHint : d.setup.languageHint}>
               <Segmented
+                id="lang"
                 label={d.setup.language}
                 value={language}
                 onChange={setLanguage}
@@ -274,43 +329,59 @@ export default function Setup() {
               />
             </Field>
             <Field label={d.setup.difficulty} hint={d.levelHints[difficulty]}>
-              <Segmented label={d.setup.difficulty} value={difficulty} onChange={setDifficulty} options={DIFFICULTIES.map((v) => ({ value: v, label: d.levels[v] }))} />
+              <Segmented id="difficulty" label={d.setup.difficulty} value={difficulty} onChange={setDifficulty} options={DIFFICULTIES.map((v) => ({ value: v, label: d.levels[v] }))} />
             </Field>
             <Field label={d.setup.length} hint={d.lengthHints[length]}>
-              <Segmented label={d.setup.length} value={length} onChange={setLength} options={LENGTHS.map((v) => ({ value: v, label: d.lengths[v] }))} />
+              <Segmented id="length" label={d.setup.length} value={length} onChange={setLength} options={LENGTHS.map((v) => ({ value: v, label: d.lengths[v] }))} />
             </Field>
           </Section>
         </div>
 
-        {/* Desktop: summary + start beside the form */}
+        {/* Desktop: live summary + start */}
         <aside className="hidden lg:sticky lg:top-24 lg:block lg:self-start">
-          <div className="rounded-xl border border-border bg-surface p-5">
-            <p className="font-medium">{role ? roleName(role) : <span className="text-subtle">{d.setup.chooseRole}</span>}</p>
-            <p className="mt-1 text-sm text-muted">{summaryLine}</p>
-            {extras.length > 0 && (
-              <ul className="mt-3 space-y-1">
-                {extras.map((x) => (
-                  <li key={x} className="flex items-center gap-1.5 text-[13px] text-success">
-                    <Check className="size-3.5" />
-                    {x}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="mt-5">{startButton}</div>
-            <p className="t-caption mt-4 flex gap-2">
-              <Mic className="mt-0.5 size-3.5 shrink-0" />
-              {d.setup.micNote}
-            </p>
+          <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
+            <div className="dot-grid border-b border-border px-5 pt-5 pb-4">
+              <p className="t-eyebrow">{d.setup.summary}</p>
+              <AnimatePresence mode="wait" initial={false}>
+                <m.p key={target?.title ?? "none"} initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.15 }} className="mt-2 text-lg leading-snug font-semibold tracking-[-0.02em] break-words" dir="auto">
+                  {target?.title || <span className="font-normal text-subtle">{d.setup.chooseRole}</span>}
+                </m.p>
+              </AnimatePresence>
+              {specialization.trim() && (
+                <p className="mt-0.5 truncate text-sm text-muted" dir="auto">
+                  {specialization.trim()}
+                </p>
+              )}
+            </div>
+            <div className="px-5 py-4">
+              <p className="text-sm text-muted">{summaryLine}</p>
+              {extras.length > 0 && (
+                <ul className="mt-3 space-y-1.5">
+                  {extras.map((x) => (
+                    <li key={x} className="flex animate-pop-in items-center gap-1.5 text-[13px] font-medium text-success">
+                      <Check className="size-3.5" />
+                      {x}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="mt-5">{startButton}</div>
+              <p className="t-caption mt-4 flex gap-2">
+                <Mic className="mt-0.5 size-3.5 shrink-0" />
+                {d.setup.micNote}
+              </p>
+            </div>
           </div>
         </aside>
       </div>
 
       {/* Mobile/tablet: sticky start bar above the bottom navigation */}
-      <div className="sticky bottom-[calc(3.5rem+env(safe-area-inset-bottom))] z-30 -mx-4 mt-2 border-t border-border bg-bg/95 px-4 py-3 backdrop-blur-sm sm:-mx-6 sm:px-6 md:bottom-0 lg:hidden">
+      <div className="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] z-30 -mx-4 mt-2 border-t border-border bg-bg/90 px-4 py-3 backdrop-blur-md sm:-mx-6 sm:px-6 md:bottom-0 lg:hidden">
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{role ? roleName(role) : <span className="text-subtle">{d.setup.chooseRole}</span>}</p>
+            <p className="truncate text-sm font-semibold" dir="auto">
+              {target?.title || <span className="font-normal text-subtle">{d.setup.chooseRole}</span>}
+            </p>
             <p className="truncate text-xs text-muted">
               {summaryLine}
               {extras.length ? ` · ${extras.join(" · ")}` : ""}

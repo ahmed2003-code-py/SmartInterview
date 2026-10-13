@@ -30,6 +30,27 @@ const QUESTIONS: Record<Lang, { topic: string; text: string }[]> = {
   ],
 };
 
+// Role-neutral bank for non-teaching (suggested or custom) roles.
+const GENERAL_QUESTIONS: Record<Lang, { topic: string; text: string }[]> = {
+  en: [
+    { topic: "Motivation", text: "Tell me a little about yourself and why you want this {role} position." },
+    { topic: "Experience", text: "Tell me about a project or task you are proud of. What was your part?" },
+    { topic: "Problem solving", text: "Describe a difficult problem you faced and how you solved it." },
+    { topic: "Teamwork", text: "How do you handle a disagreement with a teammate?" },
+    { topic: "Pressure", text: "Tell me about a time you had a tight deadline. What did you do?" },
+    { topic: "Growth", text: "What is one skill you are working on improving right now?" },
+  ],
+  ar: [
+    { topic: "الدافع", text: "حدثني قليلاً عن نفسك، ولماذا تريد العمل في وظيفة {role}؟" },
+    { topic: "الخبرة", text: "احكِ لي عن مشروع أو مهمة تفخر بها. ما الدور الذي قمت به؟" },
+    { topic: "حل المشكلات", text: "صف مشكلة صعبة واجهتها وكيف حللتها." },
+    { topic: "العمل الجماعي", text: "كيف تتعامل مع خلاف مع زميل في الفريق؟" },
+    { topic: "ضغط العمل", text: "احكِ لي عن موقف كان فيه موعد تسليم ضيق. ماذا فعلت؟" },
+    { topic: "التطور", text: "ما المهارة التي تعمل على تطويرها حالياً؟" },
+  ],
+};
+const bankFor = (ctx: InterviewContext, lang: Lang) => (ctx.domain === "education" ? QUESTIONS : GENERAL_QUESTIONS)[lang];
+
 // Short spoken reactions so demo mode doesn't sound like a fixed list.
 const REACTIONS: Record<Lang, string[]> = {
   en: ["Thanks, that's helpful.", "Okay, I follow.", "Right.", "That makes sense.", "Good, let's build on that."],
@@ -85,7 +106,7 @@ const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function mockPlan(ctx: InterviewContext): Promise<PlanResult> {
   await delay(600);
-  const bank = QUESTIONS[ctx.language];
+  const bank = bankFor(ctx, ctx.language);
   const first = bank[0];
   return {
     topics: bank.slice(0, Math.min(ctx.maxQuestions, bank.length)).map((q) => q.topic),
@@ -142,7 +163,8 @@ export async function mockTurn(input: TurnInput): Promise<Omit<TurnResult, "resp
     return { scores, feedback, suggestedAnswer: FEEDBACK[lang].better, decision: "FOLLOW_UP", topic: input.currentTopic, nextQuestion: text };
   }
   const asked = [...history.map((h) => h.question), input.question].join("\n");
-  const next = QUESTIONS[lang].slice(1).find((q) => !asked.includes(q.text)) ?? QUESTIONS[lang][1];
+  const bank = bankFor(input.ctx, lang);
+  const next = bank.slice(1).find((q) => !asked.includes(q.text)) ?? bank[1];
   return { scores, feedback, suggestedAnswer: FEEDBACK[lang].better, decision: "NEXT_TOPIC", topic: next.topic, nextQuestion: `${reaction(lang, questionNumber + 2)} ${next.text}` };
 }
 

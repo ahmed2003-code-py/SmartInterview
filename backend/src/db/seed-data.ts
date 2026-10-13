@@ -5,7 +5,8 @@ import { ROLES } from "../data/roles.js";
 /** Idempotent: safe to run on every start. Never deletes data. */
 export async function ensureRoles() {
   for (const [i, role] of ROLES.entries()) {
-    await prisma.role.upsert({ where: { slug: role.slug }, update: { ...role, sortOrder: i }, create: { ...role, sortOrder: i } });
+    const data = { ...role, domain: role.domain ?? "education", sortOrder: i };
+    await prisma.role.upsert({ where: { slug: role.slug }, update: data, create: data });
   }
 }
 

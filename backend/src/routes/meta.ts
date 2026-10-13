@@ -12,7 +12,7 @@ metaRouter.get("/config", (_req, res) => {
 });
 
 metaRouter.get("/roles", async (_req, res) => {
-  const roles = await prisma.role.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true, slug: true, nameEn: true, nameAr: true, descriptionEn: true, descriptionAr: true } });
+  const roles = await prisma.role.findMany({ orderBy: { sortOrder: "asc" }, select: { id: true, slug: true, nameEn: true, nameAr: true, descriptionEn: true, descriptionAr: true, domain: true } });
   res.json({ roles });
 });
 

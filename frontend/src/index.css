@@ -1,8 +1,5 @@
 @import "tailwindcss";
 @import "@fontsource-variable/geist";
-@import "@fontsource-variable/newsreader/opsz.css";
-@import "@fontsource-variable/newsreader/opsz-italic.css";
-@import "@fontsource-variable/noto-naskh-arabic";
 @import "@fontsource/ibm-plex-sans-arabic/400.css";
 @import "@fontsource/ibm-plex-sans-arabic/500.css";
 @import "@fontsource/ibm-plex-sans-arabic/600.css";
@@ -10,78 +7,89 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ---------- Design tokens ----------
-   Mostly neutral (warm paper / graphite). One accent family (muted violet)
-   reserved for primary actions, selection, progress and focus. */
+/* ---------- SmartInterview design tokens ----------
+   Foundation: warm paper (light) / graphite (dark). One violet accent for action, selection and
+   focus. A violet→orchid "AI signal" gradient is reserved for the interviewer's live states and the
+   report score — the product's signature. Coral = recording (live mic). Green/amber = performance. */
 :root {
-  --bg: #f8f7f4;
-  --bg-subtle: #f2f0eb;
+  --bg: #f7f6f3;
+  --bg-subtle: #f1efea;
   --surface: #ffffff;
-  --surface-2: #f1efea;
-  --text: #1b1a17;
-  --text-muted: #5f5b53;
-  --text-subtle: #7f7a70;
-  --border: #e6e2da;
-  --border-strong: #d3cec4;
-  --ink: #1b1a17; /* neutral dark surface (interviewer avatar, CTA band) */
-  --ink-fg: #f8f7f4;
-  --primary: #4d46a6;
-  --primary-hover: #403a92;
+  --surface-2: #f2f0eb;
+  --surface-3: #e9e6df;
+  --text: #18171c;
+  --text-muted: #5d5a55;
+  --text-subtle: #7c7870;
+  --border: #e7e3db;
+  --border-strong: #d5d0c6;
+  --ink: #18171c;
+  --ink-fg: #f7f6f3;
+  --primary: #5847d9;
+  --primary-hover: #4a3ac4;
   --primary-fg: #ffffff;
-  --primary-soft: #efeef8;
-  --primary-soft-text: #403a92;
-  --success: #2f7a52;
-  --success-soft: #e9f3ec;
-  --warning: #a5620c;
+  --primary-soft: #efedfc;
+  --primary-soft-text: #4434b5;
+  --ai-1: #6a55f0;
+  --ai-2: #b44fe0;
+  --rec: #e5484d;
+  --rec-soft: #fdecec;
+  --success: #23794c;
+  --success-soft: #e7f3ec;
+  --warning: #a35f08;
   --warning-soft: #f8efdf;
-  --danger: #b4382e;
+  --danger: #c0392f;
   --danger-soft: #f9e9e6;
-  --ring: color-mix(in srgb, var(--primary) 45%, transparent);
-  --shadow-sm: 0 1px 2px rgb(27 26 23 / 0.04);
-  --shadow-md: 0 1px 2px rgb(27 26 23 / 0.04), 0 12px 32px -12px rgb(27 26 23 / 0.14);
+  --ring: color-mix(in srgb, var(--primary) 40%, transparent);
+  --shadow-sm: 0 1px 2px rgb(24 23 28 / 0.05);
+  --shadow-md: 0 1px 2px rgb(24 23 28 / 0.04), 0 8px 24px -10px rgb(24 23 28 / 0.14);
+  --shadow-lg: 0 1px 2px rgb(24 23 28 / 0.04), 0 24px 60px -20px rgb(24 23 28 / 0.22);
   --font: "Geist Variable", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Newsreader Variable", "Noto Naskh Arabic Variable", Georgia, serif;
+  --ease-out: cubic-bezier(0.2, 0.7, 0.2, 1);
   color-scheme: light;
 }
 
 .dark {
-  --bg: #121214;
-  --bg-subtle: #161619;
-  --surface: #1a1a1e;
-  --surface-2: #232328;
-  --text: #ecebe8;
-  --text-muted: #a3a09a;
-  --text-subtle: #85827b;
+  --bg: #111113;
+  --bg-subtle: #151518;
+  --surface: #19191d;
+  --surface-2: #212126;
+  --surface-3: #2a2a30;
+  --text: #edece9;
+  --text-muted: #a5a29c;
+  --text-subtle: #86837d;
   --border: #29292f;
-  --border-strong: #3a3a41;
-  --ink: #ecebe8;
-  --ink-fg: #121214;
-  --primary: #6c65cf;
-  --primary-hover: #7a74db;
+  --border-strong: #3a3a42;
+  --ink: #edece9;
+  --ink-fg: #111113;
+  --primary: #6c5df0;
+  --primary-hover: #7c6ef5;
   --primary-fg: #ffffff;
-  --primary-soft: #23213a;
-  --primary-soft-text: #bdb8f5;
-  --success: #62bd8c;
-  --success-soft: #16261d;
-  --warning: #dfa452;
-  --warning-soft: #2a2215;
-  --danger: #eb7b70;
-  --danger-soft: #2f1a18;
+  --primary-soft: #221f3e;
+  --primary-soft-text: #c3bbfd;
+  --ai-1: #7f6cff;
+  --ai-2: #c46cf0;
+  --rec: #f2555a;
+  --rec-soft: #33191b;
+  --success: #5fc08b;
+  --success-soft: #142a1e;
+  --warning: #e2a552;
+  --warning-soft: #2b2215;
+  --danger: #ef7d72;
+  --danger-soft: #311a18;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35);
-  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 16px 40px -16px rgb(0 0 0 / 0.6);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 10px 28px -12px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 1px 2px rgb(0 0 0 / 0.3), 0 28px 70px -24px rgb(0 0 0 / 0.75);
   color-scheme: dark;
 }
 
 :root:lang(ar),
 [lang="ar"] {
   --font: "IBM Plex Sans Arabic", "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Noto Naskh Arabic Variable", "Newsreader Variable", serif;
 }
 [lang="en"] {
   --font: "Geist Variable", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Newsreader Variable", "Noto Naskh Arabic Variable", Georgia, serif;
 }
-/* A section in another language (e.g. an Arabic report in the English app) uses that language's fonts. */
+/* A section in another language (e.g. an Arabic report in the English app) uses that language's font. */
 div[lang] {
   font-family: var(--font);
 }
@@ -91,6 +99,7 @@ div[lang] {
   --color-bg-subtle: var(--bg-subtle);
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-fg: var(--text);
   --color-muted: var(--text-muted);
   --color-subtle: var(--text-subtle);
@@ -103,6 +112,10 @@ div[lang] {
   --color-primary-fg: var(--primary-fg);
   --color-primary-soft: var(--primary-soft);
   --color-primary-soft-fg: var(--primary-soft-text);
+  --color-ai-1: var(--ai-1);
+  --color-ai-2: var(--ai-2);
+  --color-rec: var(--rec);
+  --color-rec-soft: var(--rec-soft);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
@@ -110,13 +123,16 @@ div[lang] {
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
   --font-sans: var(--font);
-  --font-display: var(--font-display);
+  --font-display: var(--font);
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
+  --shadow-lg: var(--shadow-lg);
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 22px;
+  --ease-out: var(--ease-out);
 }
 
 @layer base {
@@ -136,17 +152,12 @@ div[lang] {
   :lang(ar) body {
     line-height: 1.7;
   }
-  /* Arabic script must never be letter-spaced. */
+  /* Arabic script must never be letter-spaced, and has no italic. */
   :lang(ar) * {
     letter-spacing: 0 !important;
   }
-  /* Arabic has no italic; Naskh headings read better slightly larger. */
-  :lang(ar) .font-display,
   :lang(ar) .italic {
     font-style: normal !important;
-  }
-  :lang(ar) .font-display {
-    line-height: 1.45;
   }
   ::selection {
     background: color-mix(in srgb, var(--primary) 25%, transparent);
@@ -161,17 +172,42 @@ div[lang] {
   }
 }
 
-/* ---------- Type scale (one source of truth for the whole app) ---------- */
+/* ---------- Type scale (one source of truth) ---------- */
 @layer components {
+  .t-hero {
+    font-size: clamp(2.6rem, 8vw, 4.75rem);
+    line-height: 1;
+    font-weight: 620;
+    letter-spacing: -0.045em;
+  }
+  :lang(ar) .t-hero {
+    line-height: 1.25;
+    font-weight: 700;
+  }
+  .t-display {
+    font-size: clamp(1.85rem, 4.2vw, 2.75rem);
+    line-height: 1.08;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+  }
+  :lang(ar) .t-display {
+    line-height: 1.35;
+    font-weight: 700;
+  }
   .t-page {
-    font-family: var(--font-display);
-    font-size: 1.75rem;
+    font-size: 1.625rem;
     line-height: 1.15;
-    font-weight: 450;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+  :lang(ar) .t-page {
+    line-height: 1.4;
+    font-weight: 700;
   }
   .t-section {
     font-size: 0.9375rem;
     font-weight: 600;
+    letter-spacing: -0.01em;
   }
   .t-label {
     font-size: 0.8125rem;
@@ -182,37 +218,121 @@ div[lang] {
     font-size: 0.8125rem;
     color: var(--text-subtle);
   }
+  .t-eyebrow {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-subtle);
+  }
+  :lang(ar) .t-eyebrow {
+    font-size: 0.8125rem;
+    text-transform: none;
+  }
   .t-metric {
-    font-family: var(--font-display);
-    font-size: 2.25rem;
+    font-size: 2rem;
     line-height: 1;
-    font-weight: 450;
+    font-weight: 600;
+    letter-spacing: -0.04em;
     font-variant-numeric: tabular-nums;
   }
   @media (min-width: 640px) {
     .t-page {
-      font-size: 2.125rem;
+      font-size: 2rem;
     }
+  }
+
+  /* The AI signal: used only where the interviewer is "alive" and for the report score. */
+  .ai-gradient {
+    background-image: linear-gradient(135deg, var(--ai-1), var(--ai-2));
+  }
+  .ai-text {
+    background-image: linear-gradient(135deg, var(--ai-1), var(--ai-2));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* A quiet structural texture for hero areas (no blobs). */
+  .dot-grid {
+    background-image: radial-gradient(color-mix(in srgb, var(--text) 9%, transparent) 1px, transparent 1px);
+    background-size: 18px 18px;
+  }
+  /* Clickable rows/cards: tiny lift on hover (pointer devices only). */
+  .lift {
+    transition: transform 0.18s var(--ease-out), border-color 0.18s, box-shadow 0.18s, background-color 0.18s;
+  }
+  @media (hover: hover) {
+    .lift:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md);
+    }
+  }
+  .press {
+    transition: transform 0.12s var(--ease-out);
+  }
+  .press:active {
+    transform: scale(0.97);
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
   }
 }
 
-/* ---------- Small motion primitives ---------- */
+/* ---------- CSS motion primitives (component motion lives in lib/motion) ---------- */
 @keyframes fade-up {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 }
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
 @keyframes pulse-ring {
   0% { transform: scale(1); opacity: 0.45; }
-  100% { transform: scale(1.55); opacity: 0; }
+  100% { transform: scale(1.6); opacity: 0; }
 }
 @keyframes speak-bar {
-  0%, 100% { transform: scaleY(0.35); }
+  0%, 100% { transform: scaleY(0.3); }
   50% { transform: scaleY(1); }
 }
-.animate-fade-up { animation: fade-up 0.35s ease-out both; }
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.06); }
+}
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+@keyframes dot-bounce {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.45; }
+  40% { transform: translateY(-3px); opacity: 1; }
+}
+.animate-fade-up { animation: fade-up 0.32s var(--ease-out) both; }
+.animate-fade-in { animation: fade-in 0.25s ease-out both; }
+.animate-pop-in { animation: pop-in 0.22s var(--ease-out) both; }
 .animate-pulse-ring { animation: pulse-ring 1.8s ease-out infinite; }
 .animate-speak-bar { animation: speak-bar 0.9s ease-in-out infinite; transform-origin: center; }
+.animate-orb { animation: orb-breathe 2.4s ease-in-out infinite; }
+.animate-dot { animation: dot-bounce 1.2s ease-in-out infinite; }
+.animate-shimmer {
+  background-image: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--text) 6%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Theme switch: colors cross-fade briefly (class added by the theme provider for ~250ms). */
+.theme-transition,
+.theme-transition *,
+.theme-transition *::before,
+.theme-transition *::after {
+  transition: background-color 0.22s ease, border-color 0.22s ease, color 0.22s ease, fill 0.22s ease !important;
+}
 
 @media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 }

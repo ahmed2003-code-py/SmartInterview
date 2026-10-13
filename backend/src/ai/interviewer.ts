@@ -139,7 +139,7 @@ export async function writeReport(
   // used). Any note not already in the report language is rewritten, so one report never mixes languages.
   const wrongLang = (t: string) => (reportLanguage === "ar" ? arabicShare(t) < 0.5 : arabicShare(t) > 0.15);
   const rewrite = items.some((it) => wrongLang(it.feedback) || wrongLang(it.suggestedAnswer));
-  const result = await ask(ReportSchema, reportPrompt(ctx, items, categoryScores, overall, reportLanguage, rewrite), rewrite ? 2200 : 900);
+  const result = await ask(ReportSchema, reportPrompt(ctx, items, categoryScores, overall, reportLanguage, rewrite), rewrite ? 2600 : 1400, "medium");
   if (!rewrite) return { ...result, questions: undefined };
   if (result.questions?.length === items.length) return result;
   // The combined call dropped the notes: one smaller, dedicated call. Failing that, keep the originals.

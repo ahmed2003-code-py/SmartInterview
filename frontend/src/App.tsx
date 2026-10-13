@@ -8,6 +8,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { GuestOnly, RequireAuth } from "@/components/layout/RequireAuth";
 import { Spinner } from "@/components/ui/spinner";
+import { MotionProvider } from "@/lib/motion";
 import Landing from "@/pages/Landing";
 import { LoginPage, RegisterPage } from "@/pages/Auth";
 import NotFound from "@/pages/NotFound";
@@ -36,6 +37,7 @@ export default function App() {
       <I18nProvider>
         <AuthProvider>
           <TooltipProvider>
+            <MotionProvider>
             <BrowserRouter>
               <Suspense fallback={fallback}>
                 <Routes>
@@ -57,6 +59,7 @@ export default function App() {
                 </Routes>
               </Suspense>
             </BrowserRouter>
+            </MotionProvider>
             <Toasts />
           </TooltipProvider>
         </AuthProvider>

@@ -1,4 +1,5 @@
-// Interview roles. To add a role: append an entry here and run `npm run db:seed`.
+// Suggested interview roles (quick options in setup). Students can also type any custom role.
+// To add a suggestion: append an entry here; it is upserted on the next start.
 export interface RoleSeed {
   slug: string;
   nameEn: string;
@@ -6,6 +7,8 @@ export interface RoleSeed {
   descriptionEn: string;
   descriptionAr: string;
   focusAreas: string[];
+  /** Defaults to "education". Other domains get a hiring-manager interviewer instead of a school principal. */
+  domain?: "education" | "general";
 }
 
 export const ROLES: RoleSeed[] = [
@@ -72,5 +75,59 @@ export const ROLES: RoleSeed[] = [
     descriptionEn: "Supporting instruction, small groups and academic tasks.",
     descriptionAr: "دعم التدريس، والعمل مع المجموعات الصغيرة، والمهام الأكاديمية.",
     focusAreas: ["Supporting the lead teacher", "Small-group instruction", "Student support", "Grading and feedback", "Professional communication"],
+  },
+  {
+    slug: "software-engineer",
+    domain: "general",
+    nameEn: "Software Engineer",
+    nameAr: "مهندس برمجيات",
+    descriptionEn: "Problem solving, code quality, system design and teamwork.",
+    descriptionAr: "حل المشكلات، وجودة الكود، وتصميم الأنظمة، والعمل الجماعي.",
+    focusAreas: ["Problem solving and debugging", "Code quality and testing", "System design trade-offs", "Projects they built", "Teamwork and code review"],
+  },
+  {
+    slug: "ai-engineer",
+    domain: "general",
+    nameEn: "AI Engineer",
+    nameAr: "مهندس ذكاء اصطناعي",
+    descriptionEn: "Models, data, evaluation and shipping AI features.",
+    descriptionAr: "النماذج، والبيانات، والتقييم، وإطلاق خصائص الذكاء الاصطناعي.",
+    focusAreas: ["ML / LLM fundamentals", "Data quality", "Evaluation and metrics", "Deploying models", "Projects they built"],
+  },
+  {
+    slug: "accountant",
+    domain: "general",
+    nameEn: "Accountant",
+    nameAr: "محاسب",
+    descriptionEn: "Accuracy, reporting, controls and tools.",
+    descriptionAr: "الدقة، والتقارير المالية، والرقابة، والأدوات المحاسبية.",
+    focusAreas: ["Accounting principles", "Financial reporting", "Accuracy and controls", "Excel / accounting software", "Deadlines and pressure"],
+  },
+  {
+    slug: "hr-specialist",
+    domain: "general",
+    nameEn: "HR Specialist",
+    nameAr: "أخصائي موارد بشرية",
+    descriptionEn: "Recruitment, employee relations and HR processes.",
+    descriptionAr: "التوظيف، وعلاقات الموظفين، وإجراءات الموارد البشرية.",
+    focusAreas: ["Recruitment and interviewing", "Employee relations", "Policies and labour law basics", "Onboarding", "Confidentiality"],
+  },
+  {
+    slug: "customer-service",
+    domain: "general",
+    nameEn: "Customer Service Representative",
+    nameAr: "ممثل خدمة عملاء",
+    descriptionEn: "Handling customers, problem solving and communication.",
+    descriptionAr: "التعامل مع العملاء، وحل المشكلات، والتواصل.",
+    focusAreas: ["Handling difficult customers", "Problem resolution", "Clear communication", "Empathy and patience", "Working with targets"],
+  },
+  {
+    slug: "sales-representative",
+    domain: "general",
+    nameEn: "Sales Representative",
+    nameAr: "مندوب مبيعات",
+    descriptionEn: "Prospecting, persuasion, objections and targets.",
+    descriptionAr: "البحث عن العملاء، والإقناع، والتعامل مع الاعتراضات، والأهداف.",
+    focusAreas: ["Understanding customer needs", "Handling objections", "Closing", "Targets and resilience", "Product knowledge"],
   },
 ];

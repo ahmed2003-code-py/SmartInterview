@@ -7,7 +7,7 @@ Graduation project. Live at **https://smartinterview-production.up.railway.app**
 ## Features
 
 - Register / log in
-- Interview setup: role, language, difficulty, length, optional job description
+- Interview setup: any role (searchable suggestions or a custom typed role), optional specialization / subject, language, difficulty, length, optional CV and job description
 - Interview room: the interviewer's voice (browser TTS), microphone recording, a transcript the student can edit, contextual follow-ups
 - Report: overall score, five criteria, strengths, areas to improve, recommended practice, and per-question feedback with a stronger sample answer
 - Dashboard and history
@@ -64,6 +64,8 @@ While recording, the student's message shows a live audio-level meter and, in br
 | Free-tier quota | ample | **20 requests per day per project** |
 
 Groq stays primary: it keeps English terms in English, it's 3.5× faster, and the Gemini free tier only allows about 3 interviews a day. Gemini is the automatic fallback. With a paid Gemini plan, `STT_PROVIDER=gemini` gives much better Egyptian-Arabic accuracy.
+
+**Any role (custom roles):** the setup combobox suggests common roles (education first, plus a few others such as Software Engineer or Accountant) but accepts any typed role, in Arabic or English, plus an optional free-form specialization. A custom role is stored exactly as typed (`Interview.roleTitle`) and shown everywhere (room, report, history, dashboard). The interviewer persona follows the field: a school principal for education roles, a hiring manager for others, and an interviewer from the same field for custom roles. Role and specialization text are treated as untrusted input.
 
 **CV personalization (optional):** on the setup page the student can upload a CV (PDF, DOCX or TXT, up to 5 MB). The file is read in memory, condensed into a short profile (education, experience, skills, with no contact details), and only that profile is stored with the interview. The original file and raw text are never stored or logged. CV and job-description text are treated as untrusted data. The interviewer uses the CV for one or two natural questions; the rest stay on the role and the job.
 
@@ -168,7 +170,7 @@ backend/
     routes/          auth, interviews, meta (config, roles, dashboard, health)
     services/        interview flow + persistence
     db/              Prisma client, idempotent seed data (roles, demo account)
-    data/roles.ts    interview roles (add one here; it is upserted on next start)
+    data/roles.ts    suggested roles (add one here; it is upserted on next start). Students can also type any role.
 frontend/
   src/
     pages/           Landing, Auth, Dashboard, Setup, InterviewRoom, Report, History

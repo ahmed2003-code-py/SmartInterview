@@ -7,27 +7,56 @@ import { LanguageSwitch, ThemeToggle } from "@/components/layout/Preferences";
 import { useI18n } from "@/i18n";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
+import { Check } from "lucide-react";
+import { m, fadeUp, stagger } from "@/lib/motion";
 
 function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle: string; children: ReactNode; footer: ReactNode }) {
   const { d } = useI18n();
   return (
-    <div className="flex min-h-dvh flex-col bg-bg">
-      <header className="flex h-14 items-center justify-between px-4 sm:px-6">
-        <Logo />
-        <div className="flex items-center gap-1">
-          <LanguageSwitch />
-          <ThemeToggle />
-        </div>
-      </header>
-      <main className="flex flex-1 flex-col items-center justify-center px-4 pt-6 pb-16">
-        <div className="w-full max-w-[24rem] animate-fade-up">
-          <h1 className="font-display text-[2.1rem] leading-tight font-[450]">{title}</h1>
-          <p className="mt-2 text-muted">{subtitle}</p>
-          <div className="mt-8 rounded-xl border border-border bg-surface p-6 sm:p-7">{children}</div>
-          <p className="mt-6 text-center text-sm text-muted">{footer}</p>
-        </div>
-      </main>
-      <p className="px-4 pb-6 text-center text-xs text-subtle">{d.common.tagline}</p>
+    <div className="grid min-h-dvh bg-bg lg:grid-cols-[1fr_minmax(0,0.9fr)]">
+      <div className="flex min-h-dvh flex-col">
+        <header className="flex h-14 items-center justify-between px-4 sm:px-6">
+          <Logo />
+          <div className="flex items-center gap-1">
+            <LanguageSwitch />
+            <ThemeToggle />
+          </div>
+        </header>
+        <main className="flex flex-1 flex-col items-center justify-center px-4 pt-6 pb-16">
+          <m.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-[24rem]">
+            <h1 className="t-page">{title}</h1>
+            <p className="mt-2 text-muted">{subtitle}</p>
+            <div className="mt-8">{children}</div>
+            <p className="mt-8 text-center text-sm text-muted">{footer}</p>
+          </m.div>
+        </main>
+      </div>
+
+      {/* Desktop: what you get, on the brand surface */}
+      <aside className="relative hidden overflow-hidden bg-ink text-ink-fg lg:flex lg:flex-col lg:justify-end lg:p-12">
+        <div className="dot-grid absolute inset-0 opacity-[0.15] invert dark:invert-0" />
+        <div className="ai-gradient pointer-events-none absolute -top-32 -end-32 size-96 rounded-full opacity-35 blur-3xl" />
+        <m.div initial="hidden" animate="show" variants={stagger(0.08, 0.15)} className="relative max-w-md">
+          <m.div variants={fadeUp} className="flex items-end gap-1.5" aria-hidden>
+            {[10, 18, 13, 24, 16, 30, 20].map((h, i) => (
+              <span key={i} className="ai-gradient w-2 rounded-full animate-speak-bar" style={{ height: h * 1.6, animationDelay: `${i * 0.12}s` }} />
+            ))}
+          </m.div>
+          <m.h2 variants={fadeUp} className="t-display mt-8">
+            {d.auth.asideTitle}
+          </m.h2>
+          <ul className="mt-6 space-y-3">
+            {d.auth.asidePoints.map((p) => (
+              <m.li key={p} variants={fadeUp} className="flex items-center gap-3 text-[15px] opacity-85">
+                <span className="grid size-5 place-items-center rounded-full bg-ink-fg/10">
+                  <Check className="size-3" strokeWidth={3} />
+                </span>
+                {p}
+              </m.li>
+            ))}
+          </ul>
+        </m.div>
+      </aside>
     </div>
   );
 }
@@ -88,7 +117,7 @@ export function LoginPage() {
         <Field label={d.auth.password} htmlFor="password">
           <Input id="password" type="password" autoComplete="current-password" dir="ltr" required value={password} onChange={(e) => setPassword(e.target.value)} />
         </Field>
-        {error && <p className="rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger" role="alert">{error}</p>}
+        {error && <p className="animate-pop-in rounded-xl bg-danger-soft px-3 py-2.5 text-sm text-danger" role="alert">{error}</p>}
         <Button type="submit" size="lg" className="w-full" loading={busy}>
           {d.auth.loginCta}
         </Button>
@@ -152,7 +181,7 @@ export function RegisterPage() {
         <Field label={d.auth.password} htmlFor="password" hint={d.auth.passwordHint} error={errors.password}>
           <Input id="password" type="password" autoComplete="new-password" dir="ltr" value={form.password} onChange={set("password")} aria-invalid={!!errors.password} />
         </Field>
-        {error && <p className="rounded-md bg-danger-soft px-3 py-2.5 text-sm text-danger" role="alert">{error}</p>}
+        {error && <p className="animate-pop-in rounded-xl bg-danger-soft px-3 py-2.5 text-sm text-danger" role="alert">{error}</p>}
         <Button type="submit" size="lg" className="w-full" loading={busy}>
           {d.auth.registerCta}
         </Button>

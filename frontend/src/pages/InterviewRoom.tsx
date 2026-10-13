@@ -11,13 +11,14 @@ import { ErrorState } from "@/components/ui/states";
 import { LogoMark } from "@/components/layout/Logo";
 import { ThemeToggle } from "@/components/layout/Preferences";
 import { Waveform } from "@/features/interview/Waveform";
-import { AiMessage, InterviewerAvatar, StudentMessage, ThinkingMessage } from "@/features/interview/Conversation";
+import { AiMessage, AiOrb, StudentMessage } from "@/features/interview/Conversation";
 import { useInterviewerVoice } from "@/hooks/useInterviewerVoice";
 import { useLiveCaption } from "@/hooks/useLiveCaption";
 import { recordingSupported, useRecorder, type Recording, type RecorderError } from "@/hooks/useRecorder";
 import { api, ApiError, type AppConfig, type InterviewDTO, type QuestionDTO } from "@/lib/api";
 import { I18nOverride, useI18n } from "@/i18n";
 import { clockTime, cn, textDir } from "@/lib/utils";
+import { AnimatePresence, m } from "@/lib/motion";
 
 /**
  * READY → AI_SPEAKING → WAITING_FOR_USER → RECORDING → TRANSCRIBING → ANALYZING → AI_SPEAKING …
@@ -311,6 +312,7 @@ function Room({
       if (err !== "failed") setInputMode("text");
       return;
     }
+    recStartRef.current = performance.now();
     setPhase("RECORDING");
     // Captions: in smart mode follow the language of the student's last answer; otherwise the question's
     // language (mixed → Arabic recognizer, which handles common English terms best).
@@ -320,7 +322,10 @@ function Room({
     caption.start(captionLang);
   }
 
+  // "Done" sits where the mic button was: a double-tap on the mic must not stop the recording it just started.
+  const recStartRef = useRef(0);
   async function stopAnswer() {
+    if (performance.now() - recStartRef.current < 700) return;
     mark("stop");
     caption.stop();
     const rec = await recorder.stop(); // null for a second Stop click
@@ -389,25 +394,26 @@ function Room({
 
   return (
     <div className="flex h-dvh flex-col bg-bg">
-      {/* Interview header */}
-      <header className="shrink-0 border-b border-border">
-        <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
-          <Link to="/dashboard" aria-label={d.nav.dashboard} className="shrink-0">
+      {/* Interview header: who, where you are, time, a way out */}
+      <header className="shrink-0 border-b border-border/70 bg-bg/80 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 sm:px-6">
+          <Link to="/dashboard" aria-label={d.nav.dashboard} className="press shrink-0">
             <LogoMark />
           </Link>
-          <span className="h-5 w-px shrink-0 bg-border" />
           <div className="min-w-0">
-            <p className="flex items-center gap-2 text-sm font-medium">
-              <span className="truncate">{roleName}</span>
+            <p className="flex items-center gap-2 text-sm font-semibold tracking-[-0.01em]">
+              <span className="truncate" dir="auto">
+                {roleName}
+              </span>
               {!done && (
-                <span className="hidden shrink-0 items-center gap-1.5 text-xs font-normal text-success sm:flex">
-                  <span className="size-1.5 rounded-full bg-current" />
+                <span className="flex shrink-0 items-center gap-1 rounded-full bg-rec-soft px-1.5 py-px text-[10.5px] font-semibold text-rec">
+                  <span className="size-1.5 animate-pulse rounded-full bg-current" />
                   {d.room.live}
                 </span>
               )}
             </p>
-            <p className="truncate text-xs text-subtle">
-              {d.levels[interview.difficulty]} · {interview.languageMode === "smart" ? d.setup.smart : d.langs[interview.language]}
+            <p className="truncate text-xs text-subtle" dir="auto">
+              {[interview.specialization, d.levels[interview.difficulty], interview.languageMode === "smart" ? d.setup.smart : d.langs[interview.language]].filter(Boolean).join(" · ")}
             </p>
           </div>
           <div className="ms-auto flex shrink-0 items-center gap-1 sm:gap-2">
@@ -418,11 +424,10 @@ function Room({
                 </Badge>
               </Tooltip>
             )}
-            <span className="hidden text-[13px] text-muted sm:inline">{fmt(d.room.questionOf, { n: questionNumber, total: interview.maxQuestions })}</span>
-            <span className="text-[13px] text-muted tabular-nums sm:hidden" dir="ltr">
+            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-muted tabular-nums" dir="ltr" aria-label={fmt(d.room.questionOf, { n: questionNumber, total: interview.maxQuestions })}>
               {questionNumber}/{interview.maxQuestions}
             </span>
-            <span className="px-1 text-[13px] text-subtle tabular-nums" dir="ltr">
+            <span className="hidden px-1 text-xs text-subtle tabular-nums sm:inline" dir="ltr">
               {clockTime(elapsed)}
             </span>
             <div className="hidden lg:block">
@@ -431,7 +436,7 @@ function Room({
             {!done && (
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button variant="danger" size="sm" className="px-2 sm:px-3" disabled={phase === "COMPLETED"}>
+                  <Button variant="ghost" size="sm" className="px-2.5 text-muted hover:text-danger sm:px-3" disabled={phase === "COMPLETED"}>
                     {d.room.endInterview}
                   </Button>
                 </DialogTrigger>
@@ -451,33 +456,34 @@ function Room({
             )}
           </div>
         </div>
-        <div className="flex h-[3px] gap-px bg-border" aria-hidden>
+        <div className="flex h-[3px] gap-[2px]" aria-hidden>
           {Array.from({ length: interview.maxQuestions }, (_, i) => (
-            <span key={i} className={cn("flex-1 transition-colors duration-500", i < answeredCount ? "bg-primary" : i === answeredCount && phase !== "READY" && !done ? "bg-primary/35" : "bg-surface-2")} />
+            <span key={i} className="relative flex-1 overflow-hidden bg-surface-2">
+              <span
+                className={cn(
+                  "absolute inset-y-0 start-0 transition-[width,background-color] duration-700 ease-out",
+                  i < answeredCount || done ? "w-full bg-primary" : i === answeredCount && phase !== "READY" ? "w-1/2 bg-primary/45" : "w-0 bg-primary",
+                )}
+              />
+            </span>
           ))}
         </div>
       </header>
 
       {/* Conversation */}
       <div ref={scrollRef} className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-7 px-4 pt-8 pb-10 sm:px-6 sm:pt-12">
-          <div className="text-center text-xs text-subtle">
-            <div className="flex items-center gap-3">
-              <span className="h-px flex-1 bg-border" />
-              {d.room.started}
-              <span className="h-px flex-1 bg-border" />
-            </div>
-            <p className="mx-auto mt-2 flex max-w-md items-start justify-center gap-1.5 text-balance">
-              <Lock className="mt-0.5 size-3 shrink-0" />
-              {d.room.privacy}
-            </p>
-          </div>
+        <div className="mx-auto flex w-full max-w-[42rem] flex-col gap-7 px-4 pt-7 pb-10 sm:px-6 sm:pt-10">
+          <p className="mx-auto flex max-w-md items-start justify-center gap-1.5 text-center text-xs text-balance text-subtle">
+            <Lock className="mt-0.5 size-3 shrink-0" />
+            {d.room.privacy}
+          </p>
 
           {interview.questions.map((q) => {
             const isCurrent = q.id === currentQuestion?.id && !done;
             return (
               <div key={q.id} data-question={q.id} className="flex flex-col gap-5">
                 <AiMessage
+                  number={q.order}
                   text={q.text}
                   lang={q.language === "en" ? "en" : "ar"}
                   followUp={q.kind === "FOLLOW_UP"}
@@ -491,7 +497,7 @@ function Room({
                 ) : isCurrent && phase === "RECORDING" ? (
                   <StudentMessage state="recording" recordingTime={clockTime(recorder.elapsed)} caption={caption.text} levels={recorder.levels} />
                 ) : isCurrent && phase === "TRANSCRIBING" ? (
-                  <StudentMessage state="transcribing" caption={caption.text} />
+                  <StudentMessage state="transcribing" caption={caption.text} levels={recorder.levels} />
                 ) : isCurrent && pending ? (
                   <StudentMessage state={phase === "ANSWER_FAILED" ? "failed" : "sending"} text={pending} />
                 ) : null}
@@ -499,31 +505,24 @@ function Room({
             );
           })}
 
-          {phase === "ANALYZING" && <ThinkingMessage />}
           {(phase === "COMPLETED" || done) && (
-            <div className="flex animate-fade-up gap-3 sm:gap-4">
-              <InterviewerAvatar className="mt-0.5" />
-              <div>
-                <p className="text-[13px] font-medium">{d.room.interviewer}</p>
-                {done ? (
-                  <p className="mt-1.5 font-display text-[1.4rem] leading-snug font-[450] sm:text-[1.6rem]">{d.room.closing}</p>
-                ) : (
-                  <p className="mt-2 flex items-center gap-2 text-sm text-muted">
-                    <Spinner className="size-3.5" />
-                    {d.room.states.COMPLETED}
-                  </p>
-                )}
-              </div>
-            </div>
+            <m.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="flex items-center gap-3 sm:gap-4">
+              <AiOrb thinking={!done} size="md" />
+              {done ? (
+                <p className="text-[1.2rem] leading-snug font-semibold tracking-[-0.015em] sm:text-[1.35rem]">{d.room.closing}</p>
+              ) : (
+                <p className="animate-shimmer rounded-md px-1 text-sm text-muted">{d.room.states.COMPLETED}</p>
+              )}
+            </m.div>
           )}
         </div>
       </div>
 
       {/* Voice dock: only the action that makes sense right now */}
-      <footer className="shrink-0 border-t border-border bg-bg pb-[env(safe-area-inset-bottom)]">
-        <div className="mx-auto w-full max-w-[44rem] px-4 py-3 sm:px-6 sm:py-4">
+      <footer className="shrink-0 border-t border-border/70 bg-bg/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
+        <div className="mx-auto w-full max-w-[42rem] px-4 py-3 sm:px-6 sm:py-4">
           {error && phase !== "ANSWER_FAILED" && (
-            <div role="alert" className="mb-3 flex items-start gap-2.5 rounded-md bg-danger-soft px-3 py-2.5 text-sm">
+            <div role="alert" className="mb-3 flex animate-pop-in items-start gap-2.5 rounded-xl bg-danger-soft px-3 py-2.5 text-sm">
               <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
               <p className="flex-1">{error.message}</p>
               {error.retry && (
@@ -589,59 +588,36 @@ function VoiceDock(props: {
   const { d, fmt } = useI18n();
   const { phase } = props;
   const busy = phase === "TRANSCRIBING" || phase === "ANALYZING" || phase === "COMPLETED";
-  const tone =
-    props.statusKey === "ERROR" || phase === "RECORDING" || phase === "ANSWER_FAILED"
-      ? "text-danger"
-      : phase === "AI_SPEAKING"
-        ? "text-primary"
-        : phase === "WAITING_FOR_USER" || phase === "DONE"
-          ? "text-success"
-          : "text-muted";
 
-  const status = (
+  // One line of status + hint, used by the quieter states.
+  const status = (tone: string, hint?: string) => (
     <div className="min-w-0 flex-1">
-      <p className={cn("flex items-center gap-2 text-sm font-medium", tone)} aria-live="polite">
-        {busy ? (
-          <Spinner className="size-3.5" />
-        ) : phase === "AI_SPEAKING" ? (
-          <Waveform bars={4} active className="h-3.5 gap-[2px] [&>span]:w-[2px]" />
-        ) : (
-          <span className={cn("size-2 shrink-0 rounded-full bg-current", phase === "RECORDING" && "animate-pulse")} />
-        )}
-        <span className="truncate">
-          {phase === "READY" ? (props.isResuming ? d.room.resumeTitle : d.room.beginTitle) : phase === "ANSWER_FAILED" ? props.error?.message ?? d.room.errors.nextFailed : props.status}
-        </span>
+      <p className={cn("truncate text-sm font-medium", tone)} aria-live="polite">
+        {props.status}
       </p>
-      <p className="mt-0.5 truncate text-xs text-subtle">
-        {phase === "READY"
-          ? props.isResuming
-            ? props.resumeText
-            : d.room.checklist[0]
-          : phase === "WAITING_FOR_USER"
-            ? props.noTts
-              ? d.room.noTts
-              : d.room.checklist[1]
-            : busy
-              ? d.room.analyzingHint
-              : " "}
-      </p>
+      {hint && <p className="mt-0.5 truncate text-xs text-subtle">{hint}</p>}
     </div>
   );
 
+  let content: React.ReactNode;
+
   if (phase === "READY")
-    return (
+    content = (
       <div className="flex items-center gap-4">
-        {status}
+        <AiOrb size="md" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{props.isResuming ? d.room.resumeTitle : d.room.beginTitle}</p>
+          <p className="mt-0.5 truncate text-xs text-subtle">{props.isResuming ? props.resumeText : d.room.checklist[0]}</p>
+        </div>
         <Button size="lg" onClick={props.onBegin}>
           {props.isResuming ? d.room.resume : d.room.begin}
         </Button>
       </div>
     );
-
-  if (phase === "DONE")
-    return (
+  else if (phase === "DONE")
+    content = (
       <div className="flex items-center gap-4">
-        {status}
+        {status("text-success")}
         <Button asChild size="lg">
           <Link to={props.reportHref}>
             {d.room.viewReport}
@@ -650,47 +626,47 @@ function VoiceDock(props: {
         </Button>
       </div>
     );
-
-  if (phase === "ANSWER_FAILED")
-    return (
+  else if (phase === "ANSWER_FAILED")
+    content = (
       <div className="flex items-center gap-4">
-        {status}
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-danger">{props.error?.message ?? d.room.errors.nextFailed}</p>
+        </div>
         <Button size="lg" onClick={props.error?.retry}>
           <RotateCcw className="size-4" />
           {d.common.retry}
         </Button>
       </div>
     );
-
-  if (phase === "RECORDING")
-    return (
-      <div className="flex items-center gap-3 sm:gap-4">
-        <div className="shrink-0">
-          <p className="flex items-center gap-2 text-sm font-medium text-danger">
+  else if (phase === "RECORDING")
+    // Recording: live waveform, timer, one clear "Done".
+    content = (
+      <div>
+        <Waveform levels={props.levels} bars={props.levels.length} className="h-9 w-full justify-between overflow-hidden text-rec/75" />
+        <div className="mt-2.5 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+          <p className="flex items-center gap-2 text-sm font-semibold text-rec">
             <span className="size-2 animate-pulse rounded-full bg-current" />
             <span className="tabular-nums" dir="ltr">
               {clockTime(props.elapsed)}
             </span>
           </p>
-          <p className="mt-0.5 text-xs text-subtle tabular-nums">{fmt(d.room.timeLeft, { t: clockTime(Math.max(0, props.maxSeconds - props.elapsed)) })}</p>
+          <button
+            onClick={props.onStop}
+            className="press relative inline-flex h-12 items-center gap-2 rounded-full bg-rec px-6 text-sm font-semibold text-white shadow-md outline-none focus-visible:ring-4 focus-visible:ring-rec/30"
+          >
+            <span className="absolute inset-0 animate-pulse-ring rounded-full bg-rec/30" />
+            <Square className="relative size-3.5 fill-current" />
+            <span className="relative">{d.room.stopAnswer2}</span>
+          </button>
+          <p className="text-end text-xs text-subtle tabular-nums">{fmt(d.room.timeLeft, { t: clockTime(Math.max(0, props.maxSeconds - props.elapsed)) })}</p>
         </div>
-        <Waveform levels={props.levels} bars={props.levels.length} className="h-8 min-w-0 flex-1 justify-between overflow-hidden text-danger/70" />
-        <button
-          onClick={props.onStop}
-          className="relative inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-danger px-5 text-sm font-medium text-white outline-none transition-transform focus-visible:ring-4 focus-visible:ring-danger/30 active:scale-95"
-        >
-          <span className="absolute inset-0 rounded-full bg-danger/30 animate-pulse-ring" />
-          <Square className="relative size-3.5 fill-current" />
-          <span className="relative">{d.room.stopAnswer2}</span>
-        </button>
       </div>
     );
-
-  // Typed answers: fallback when the microphone is unavailable or the student prefers typing.
-  if (phase === "WAITING_FOR_USER" && props.inputMode === "text")
-    return (
+  else if (phase === "WAITING_FOR_USER" && props.inputMode === "text")
+    // Typed answers: fallback when the microphone is unavailable or the student prefers typing.
+    content = (
       <div>
-        <div className="flex items-end gap-2 rounded-lg border border-border-strong/80 bg-surface p-2 focus-within:border-primary">
+        <div className="flex items-end gap-2 rounded-2xl border border-border-strong/80 bg-surface p-2 shadow-sm transition-[border-color,box-shadow] focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10">
           <textarea
             value={props.typed}
             onChange={(e) => props.setTyped(e.target.value)}
@@ -702,7 +678,7 @@ function VoiceDock(props: {
             rows={2}
             maxLength={4000}
             autoFocus
-            className="max-h-40 min-h-12 flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] leading-relaxed outline-none"
+            className="max-h-40 min-h-12 flex-1 resize-none bg-transparent px-2 py-1.5 text-base leading-relaxed outline-none sm:text-[15px]"
             aria-label={d.room.transcriptLabel}
           />
           <Button onClick={props.onSendTyped} disabled={!props.typed.trim()} aria-label={d.room.send}>
@@ -718,25 +694,45 @@ function VoiceDock(props: {
         )}
       </div>
     );
-
-  // Your turn: one microphone action. Other states show only their status.
-  return (
-    <div className="flex min-h-12 items-center gap-3 sm:gap-4">
-      {status}
-      {phase === "WAITING_FOR_USER" && (
-        <>
-          <Button variant="ghost" size="icon" className="size-11 shrink-0" onClick={props.onToggleMode} aria-label={d.room.typeInstead}>
+  else if (phase === "WAITING_FOR_USER")
+    // Your turn: one central microphone action.
+    content = (
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-success" aria-live="polite">
+            {props.status}
+          </p>
+          <p className="mt-0.5 hidden truncate text-xs text-subtle sm:block">{props.noTts ? d.room.noTts : d.room.checklist[1]}</p>
+        </div>
+        <button
+          onClick={props.onStart}
+          aria-label={d.room.startAnswer}
+          className="press group relative grid size-16 place-items-center rounded-full bg-primary text-primary-fg shadow-[0_8px_24px_-8px_var(--primary)] outline-none transition-colors hover:bg-primary-hover focus-visible:ring-4 focus-visible:ring-primary/30"
+        >
+          <span className="absolute inset-0 animate-pulse-ring rounded-full bg-primary/25" />
+          <Mic className="relative size-6" />
+        </button>
+        <div className="flex justify-end">
+          <Button variant="ghost" size="icon" className="size-11" onClick={props.onToggleMode} aria-label={d.room.typeInstead}>
             <Keyboard className="size-[18px]" />
           </Button>
-          <button
-            onClick={props.onStart}
-            className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-primary px-5 text-sm font-medium text-primary-fg outline-none transition hover:bg-primary-hover focus-visible:ring-4 focus-visible:ring-primary/30 active:scale-95"
-          >
-            <Mic className="size-[18px]" />
-            {d.room.startAnswer}
-          </button>
-        </>
-      )}
-    </div>
+        </div>
+      </div>
+    );
+  else
+    // Interviewer speaking / transcribing / thinking: the conversation stays visible, the dock just says what's happening.
+    content = (
+      <div className="flex min-h-12 items-center gap-3 sm:gap-4">
+        <AiOrb speaking={phase === "AI_SPEAKING"} thinking={busy} size="md" />
+        {status(phase === "AI_SPEAKING" ? "text-primary" : props.statusKey === "ERROR" ? "text-danger" : "text-muted", busy ? d.room.analyzingHint : undefined)}
+      </div>
+    );
+
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      <m.div key={phase === "WAITING_FOR_USER" ? `${phase}-${props.inputMode}` : busy ? "busy" : phase} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
+        {content}
+      </m.div>
+    </AnimatePresence>
   );
 }

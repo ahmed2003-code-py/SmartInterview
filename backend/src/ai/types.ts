@@ -13,6 +13,10 @@ export const CRITERIA: (keyof Criteria)[] = ["relevance", "clarity", "communicat
 export interface InterviewContext {
   roleName: string; // in the interview language
   roleNameEn: string;
+  /** "education": a school principal interviews; "general": a hiring manager; "custom": inferred from the typed role. */
+  domain: "education" | "general" | "custom";
+  /** Optional free-form specialization / subject (untrusted text typed by the student). */
+  specialization: string | null;
   focusAreas: string[];
   difficulty: "beginner" | "intermediate" | "advanced";
   language: Lang; // preferred / starting language (also used for feedback and the report)

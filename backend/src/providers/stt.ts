@@ -8,6 +8,10 @@ export type Lang = "en" | "ar";
 export interface TranscribeContext {
   /** Role slug, used to add a few relevant vocabulary terms to the prompt. */
   roleSlug?: string;
+  /** Extra vocabulary: a custom role title / specialization (e.g. "Machine Learning Engineer, NLP"). */
+  roleTerms?: string;
+  /** False for non-teaching roles: the Arabic prompt then doesn't say "a teaching job". */
+  education?: boolean;
   /** Current question; only used by the mock provider to pick a matching simulated answer. */
   question?: string;
   /** Client-measured recording length, for debug logs only. */
@@ -108,11 +112,12 @@ const ROLE_TERMS: Record<string, string> = {
 };
 const COMMON_TERMS = "teaching assistant, lesson plan, classroom management, assessment, group work, primary, secondary";
 
-export function whisperPrompt(language: Lang, roleSlug?: string) {
-  const terms = [COMMON_TERMS, roleSlug ? ROLE_TERMS[roleSlug] : ""].filter(Boolean).join(", ");
+export function whisperPrompt(language: Lang, roleSlug?: string, ctx?: Pick<TranscribeContext, "roleTerms" | "education">) {
+  const education = ctx?.education !== false;
+  const terms = [ctx?.roleTerms, education ? COMMON_TERMS : "", roleSlug ? ROLE_TERMS[roleSlug] : ""].filter(Boolean).join(", ");
   return language === "ar"
-    ? `ده رد طالب في مقابلة شغل لوظيفة مدرس، بيتكلم بالعامية المصرية وساعات بيقول كلمات إنجليزي زي ${terms}.`
-    : `This is a student's answer in a practice interview for a teaching job. Terms may include: ${terms}.`;
+    ? `ده رد طالب في مقابلة شغل${education ? " لوظيفة مدرس" : ""}، بيتكلم بالعامية المصرية وساعات بيقول كلمات إنجليزي زي ${terms}.`
+    : `This is a student's answer in a practice interview${education ? " for a teaching job" : ""}. Terms may include: ${terms}.`;
 }
 
 async function callWhisper(audio: Buffer, mimeType: string, prompt: string, forceLanguage?: Lang): Promise<VerboseTranscription> {
@@ -155,7 +160,7 @@ async function callWhisper(audio: Buffer, mimeType: string, prompt: string, forc
 export const groqWhisper: STTProvider = {
   name: "groq-whisper",
   async transcribe(audio, mimeType, language, ctx) {
-    const prompt = whisperPrompt(language, ctx?.roleSlug);
+    const prompt = whisperPrompt(language, ctx?.roleSlug, ctx);
     const t0 = Date.now();
     let result = await callWhisper(audio, mimeType, prompt);
     const detected = (result.language ?? "").toLowerCase();
@@ -196,7 +201,7 @@ export function geminiProvider(model = config.stt.geminiModel): STTProvider {
     name: `gemini:${model}`,
     async transcribe(audio, mimeType, language, ctx) {
       const t0 = Date.now();
-      const terms = [GEMINI_TERMS, ctx?.roleSlug ? ROLE_TERMS[ctx.roleSlug] : ""].filter(Boolean).join(", ");
+      const terms = [ctx?.roleTerms, ctx?.education === false ? "" : GEMINI_TERMS, ctx?.roleSlug ? ROLE_TERMS[ctx.roleSlug] : ""].filter(Boolean).join(", ");
       const generationConfig: Record<string, unknown> = { temperature: 0, maxOutputTokens: 4096 };
       // Transcription needs no reasoning; turn thinking off/minimal where the model supports it.
       if (/^gemini-2\.5/.test(model)) generationConfig.thinkingConfig = { thinkingBudget: 0 };
@@ -209,7 +214,7 @@ export function geminiProvider(model = config.stt.geminiModel): STTProvider {
             parts: [
               { inline_data: { mime_type: mimeType.split(";")[0] || "audio/webm", data: audio.toString("base64") } },
               {
-                text: `Context (vocabulary hints only, not the content): a student's spoken answer in a teaching job interview; the interview language is ${language === "ar" ? "Arabic" : "English"}. Terms that may occur: ${terms}.\nTranscribe the audio verbatim.`,
+                text: `Context (vocabulary hints only, not the content): a student's spoken answer in a ${ctx?.education === false ? "job" : "teaching job"} interview; the interview language is ${language === "ar" ? "Arabic" : "English"}. Terms that may occur: ${terms}.\nTranscribe the audio verbatim.`,
               },
             ],
           },

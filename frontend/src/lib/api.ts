@@ -36,6 +36,7 @@ export interface User {
   email: string;
 }
 
+/** A suggested role from the server (quick option in setup). */
 export interface Role {
   id: string;
   slug: string;
@@ -43,6 +44,16 @@ export interface Role {
   nameAr: string;
   descriptionEn?: string;
   descriptionAr?: string;
+  domain?: "education" | "general";
+}
+
+/** The role an interview is for: a suggested role, or exactly what the student typed (custom). */
+export interface InterviewRole {
+  id: string | null;
+  slug: string | null;
+  nameEn: string;
+  nameAr: string;
+  custom?: boolean;
 }
 
 export type Criterion = "relevance" | "clarity" | "communication" | "subjectKnowledge" | "educationalReasoning";
@@ -94,21 +105,28 @@ export interface InterviewDTO {
   startedAt: string;
   endedAt: string | null;
   durationSec: number | null;
-  role: Role;
+  role: InterviewRole;
+  specialization: string | null;
   questions: QuestionDTO[];
   report: ReportDTO | null;
+  /** Score of the previous completed interview for the same role (only when one exists). */
+  previousScore?: number | null;
 }
 
 export interface InterviewSummary {
   id: string;
   status: InterviewStatus;
   language: "en" | "ar";
+  languageMode?: "fixed" | "smart";
   difficulty: Difficulty;
   length: Length;
   overallScore: number | null;
   startedAt: string;
   durationSec: number | null;
-  role: Role;
+  role: InterviewRole;
+  specialization?: string | null;
+  /** Score change vs the previous completed interview for the same role (dashboard only). */
+  change?: number | null;
   _count: { questions: number };
 }
 

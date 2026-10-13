@@ -34,6 +34,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [resolved]);
 
   const setTheme = (t: ThemePref) => {
+    // Brief color cross-fade so switching feels smooth (CSS disables it for reduced motion).
+    const root = document.documentElement;
+    root.classList.add("theme-transition");
+    window.setTimeout(() => root.classList.remove("theme-transition"), 260);
     setThemeState(t);
     try {
       localStorage.setItem("theme", t);

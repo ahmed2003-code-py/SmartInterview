@@ -44,7 +44,9 @@ function looksLikeAudio(buf: Buffer) {
 }
 
 const CreateSchema = z.object({
-  roleId: z.string().min(1),
+  roleId: z.string().min(1).optional().nullable(),
+  roleTitle: z.string().trim().max(80).optional().nullable(),
+  specialization: z.string().trim().max(80).optional().nullable(),
   language: z.enum(["en", "ar"]),
   languageMode: z.enum(["fixed", "smart"]).default("fixed"),
   difficulty: z.enum(["beginner", "intermediate", "advanced"]),
@@ -60,7 +62,6 @@ const AnswerSchema = z.object({
 });
 
 const ListSchema = z.object({
-  roleId: z.string().optional(),
   language: z.enum(["en", "ar"]).optional(),
   status: z.enum(["IN_PROGRESS", "COMPLETED"]).optional(),
 });
@@ -88,7 +89,10 @@ interviewsRouter.post("/:id/transcribe", aiLimiter, upload.single("audio"), asyn
   const t0 = Date.now();
   const stt = getSTT();
   const text = await stt.transcribe(req.file.buffer, req.file.mimetype, interview.language as Lang, {
-    roleSlug: interview.role.slug,
+    roleSlug: interview.role?.slug,
+    // Latin-script words of a typed role / specialization help STT keep them in English.
+    roleTerms: [interview.roleTitle, interview.specialization].filter((t) => t && /[A-Za-z]/.test(t)).join(", ") || undefined,
+    education: interview.role ? interview.role.domain === "education" : false,
     question: interview.questions[0]?.text,
     durationSec: Number.isFinite(durationSec) ? durationSec : undefined,
   });

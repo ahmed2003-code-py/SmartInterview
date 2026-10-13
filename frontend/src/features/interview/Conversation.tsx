@@ -1,22 +1,44 @@
 import { Volume2 } from "lucide-react";
-import { Spinner } from "@/components/ui/spinner";
 import { Waveform } from "./Waveform";
 import { useI18n } from "@/i18n";
+import { m } from "@/lib/motion";
 import { cn, textDir } from "@/lib/utils";
 import { ExpandableText } from "@/components/ui/expandable-text";
 
-export function InterviewerAvatar({ speaking, className }: { speaking?: boolean; className?: string }) {
+const ORB = { sm: "size-7", md: "size-9", lg: "size-14" } as const;
+
+/**
+ * The interviewer's presence: an orb on the AI-signal gradient.
+ * Idle → still. Speaking → voice bars + soft rings. Thinking → three bouncing dots.
+ */
+export function AiOrb({ speaking, thinking, size = "md", className }: { speaking?: boolean; thinking?: boolean; size?: keyof typeof ORB; className?: string }) {
   return (
-    <div className={cn("relative shrink-0", className)}>
-      {speaking && <span className="absolute -inset-1 rounded-full border-2 border-primary/45 animate-pulse-ring" />}
-      <div className="grid size-8 place-items-center rounded-full bg-ink text-ink-fg">
-        <Waveform bars={3} active={speaking} className="h-3 gap-[2px] [&>span]:w-[2px]" />
+    <div className={cn("relative shrink-0", ORB[size], className)}>
+      {speaking && (
+        <>
+          <span className="absolute -inset-1 animate-pulse-ring rounded-full bg-ai-1/25" />
+          <span className="absolute -inset-1 animate-pulse-ring rounded-full bg-ai-2/20 [animation-delay:0.6s]" />
+        </>
+      )}
+      <div className={cn("ai-gradient relative grid size-full place-items-center rounded-full text-white shadow-sm", (speaking || thinking) && "animate-orb")}>
+        {thinking ? (
+          <span className="flex gap-[3px]">
+            {[0, 1, 2].map((k) => (
+              <span key={k} className="size-[3px] animate-dot rounded-full bg-white" style={{ animationDelay: `${k * 0.15}s` }} />
+            ))}
+          </span>
+        ) : (
+          <Waveform bars={size === "lg" ? 5 : 3} active={speaking} className={cn("gap-[2px] [&>span]:w-[2px]", size === "lg" ? "h-5" : "h-3")} />
+        )}
       </div>
     </div>
   );
 }
 
-/** A question from the interviewer. The current one is set larger; earlier ones recede. */
+/** Kept for places that only need the avatar. */
+export const InterviewerAvatar = AiOrb;
+
+/** A question from the interviewer. The current one is emphasized with an accent edge; earlier ones recede. */
 export function AiMessage(props: {
   text: string;
   lang: "en" | "ar";
@@ -25,15 +47,16 @@ export function AiMessage(props: {
   speaking?: boolean;
   canReplay?: boolean;
   onReplay?: () => void;
+  number?: number;
 }) {
-  const { d } = useI18n();
+  const { d, fmt } = useI18n();
   return (
-    <div className="flex animate-fade-up gap-3 sm:gap-4">
-      <InterviewerAvatar speaking={props.speaking} className="mt-0.5" />
-      <div className="min-w-0 flex-1">
-        <p className="flex flex-wrap items-center gap-x-2 text-[13px]">
-          <span className="font-medium">{d.room.interviewer}</span>
-          {props.followUp && <span className="text-subtle">· {d.room.followUp}</span>}
+    <m.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="flex gap-3 sm:gap-4">
+      <AiOrb speaking={props.speaking} size={props.current ? "md" : "sm"} className={props.current ? "" : "mt-0.5 opacity-70"} />
+      <div className={cn("min-w-0 flex-1", props.current && "border-s-2 border-primary ps-3.5 sm:ps-4")}>
+        <p className="flex flex-wrap items-center gap-x-2 text-[12.5px]">
+          <span className={cn("font-medium", props.current ? "text-fg" : "text-subtle")}>{props.number ? fmt(d.room.question, { n: props.number }) : d.room.interviewer}</span>
+          {props.followUp && <span className="rounded-full bg-primary-soft px-2 py-px text-[11px] font-medium text-primary-soft-fg">{d.room.followUp}</span>}
           {props.speaking && (
             <span className="flex items-center gap-1.5 font-medium text-primary">
               <Waveform bars={4} active className="h-3 gap-[2px] [&>span]:w-[2px]" />
@@ -43,8 +66,8 @@ export function AiMessage(props: {
         </p>
         <p
           className={cn(
-            "mt-1.5 font-display text-pretty",
-            props.current ? "text-[1.4rem] leading-[1.3] font-[450] sm:text-[1.6rem]" : "text-[1.15rem] leading-snug text-fg/75",
+            "mt-1.5 text-pretty transition-[color,font-size] duration-300",
+            props.current ? "text-[1.3rem] leading-[1.35] font-semibold tracking-[-0.015em] sm:text-[1.5rem]" : "text-[15px] leading-relaxed text-fg/60",
           )}
           dir={textDir(props.text)}
           lang={props.lang}
@@ -56,89 +79,68 @@ export function AiMessage(props: {
             type="button"
             onClick={props.onReplay}
             disabled={!props.canReplay}
-            className="-ms-1.5 mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-subtle transition-colors hover:text-fg disabled:pointer-events-none disabled:opacity-40"
+            className="-ms-1.5 mt-2 inline-flex items-center gap-1.5 rounded-md px-1.5 py-1 text-xs text-subtle transition-colors hover:bg-surface-2 hover:text-fg disabled:pointer-events-none disabled:opacity-40"
           >
             <Volume2 className="size-3.5 rtl:-scale-x-100" />
             {d.room.replay}
           </button>
         )}
       </div>
-    </div>
+    </m.div>
   );
 }
 
 type StudentState = "final" | "sending" | "failed" | "recording" | "transcribing";
 
 /**
- * The student's answer as a message in the conversation. While recording it shows a live level
- * meter and (where the browser supports it) provisional captions; these are display-only and are
- * replaced by the final transcript, which is exactly what gets evaluated.
+ * The student's answer as a message. While recording it shows the live mic waveform and (where the
+ * browser supports it) provisional captions; these are display-only and are replaced by the final
+ * transcript, which is exactly what gets evaluated. Long answers are clamped with "Show more".
  */
 export function StudentMessage(props: { state: StudentState; text?: string; recordingTime?: string; caption?: string; levels?: number[] }) {
   const { d } = useI18n();
   const caption = props.caption?.trim();
+  const live = props.state === "recording" || props.state === "transcribing";
   return (
-    <div className="flex animate-fade-up justify-end">
+    <m.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }} className="flex justify-end">
       <div
         className={cn(
-          "w-fit max-w-[88%] min-w-[min(18rem,88%)] rounded-xl px-4 py-3 transition-colors sm:max-w-[80%]",
-          props.state === "recording" || props.state === "failed" ? "bg-danger-soft/60 ring-1 ring-danger/25" : "bg-surface-2/70",
-          props.state === "sending" && "opacity-70",
+          "w-fit max-w-[90%] min-w-[min(18rem,90%)] rounded-2xl rounded-ee-md px-4 py-3 transition-colors duration-300 sm:max-w-[80%]",
+          props.state === "recording" ? "bg-rec-soft ring-1 ring-rec/25" : props.state === "failed" ? "bg-danger-soft ring-1 ring-danger/25" : "bg-surface-2",
+          props.state === "sending" && "opacity-75",
         )}
       >
         <div className="mb-1 flex items-center justify-between gap-4 text-xs">
           <span className="text-subtle">{d.room.you}</span>
           {props.state === "recording" && (
-            <span className="flex items-center gap-2 text-danger">
-              <span className="size-2 animate-pulse rounded-full bg-current" />
-              {d.room.states.RECORDING}
+            <span className="flex items-center gap-2 font-medium text-rec">
+              <span className="size-1.5 animate-pulse rounded-full bg-current" />
               <span className="tabular-nums" dir="ltr">
                 {props.recordingTime}
               </span>
             </span>
           )}
-          {props.state === "transcribing" && (
-            <span className="flex items-center gap-1.5 text-muted">
-              <Spinner className="size-3" />
-              {d.room.transcribingMsg}
-            </span>
-          )}
+          {props.state === "transcribing" && <span className="animate-shimmer rounded px-1 text-muted">{d.room.transcribingMsg}</span>}
         </div>
 
-        {props.state === "recording" || props.state === "transcribing" ? (
+        {live ? (
           <>
-            {props.state === "recording" && props.levels && (
-              <Waveform levels={props.levels} bars={props.levels.length} className="my-1.5 h-6 w-full justify-between overflow-hidden text-danger/60" />
+            {/* The live waveform lives in the dock; here, captions (or a quiet "Listening…") only. */}
+            {caption ? (
+              <p className="text-[15px] leading-relaxed text-muted" dir={textDir(caption)}>
+                {caption}
+              </p>
+            ) : (
+              <div className="space-y-2 py-1" aria-label={props.state === "recording" ? d.room.listening : d.room.transcribingMsg}>
+                <div className={cn("h-2.5 w-11/12 rounded-full bg-current opacity-10", props.state === "transcribing" ? "animate-shimmer" : "animate-pulse")} />
+                <div className={cn("h-2.5 w-2/3 rounded-full bg-current opacity-10", props.state === "transcribing" ? "animate-shimmer" : "animate-pulse")} />
+              </div>
             )}
-            <p className={cn("text-[15px] leading-relaxed", caption ? "text-muted" : "text-subtle italic")} dir={caption ? textDir(caption) : undefined}>
-              {caption || (props.state === "recording" ? d.room.listening : "")}
-            </p>
           </>
         ) : (
-          // Long answers stay complete but are clamped so they don't take over the screen.
-          <ExpandableText text={props.text ?? ""} lines={6} className="text-[15px] leading-relaxed" />
+          <ExpandableText text={props.text ?? ""} lines={5} className="text-[15px] leading-relaxed" />
         )}
       </div>
-    </div>
-  );
-}
-
-export function ThinkingMessage() {
-  const { d } = useI18n();
-  return (
-    <div className="flex animate-fade-up gap-3 sm:gap-4">
-      <InterviewerAvatar className="mt-0.5" />
-      <div>
-        <p className="text-[13px] font-medium">{d.room.interviewer}</p>
-        <p className="mt-2 flex items-center gap-2.5 text-sm text-muted">
-          <span className="flex gap-1" aria-hidden>
-            {[0, 1, 2].map((k) => (
-              <span key={k} className="size-1.5 animate-pulse rounded-full bg-subtle" style={{ animationDelay: `${k * 0.18}s` }} />
-            ))}
-          </span>
-          {d.room.thinking}
-        </p>
-      </div>
-    </div>
+    </m.div>
   );
 }

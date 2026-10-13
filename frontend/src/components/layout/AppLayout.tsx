@@ -1,10 +1,11 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { History, LayoutGrid, LogOut, Plus } from "lucide-react";
 import { Logo } from "./Logo";
 import { LanguageSwitch, ThemeToggle } from "./Preferences";
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuTrigger } from "@/components/ui/dropdown";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/i18n";
+import { m } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 function initials(name: string) {
@@ -14,6 +15,7 @@ function initials(name: string) {
 export function AppLayout() {
   const { d } = useI18n();
   const { user, logout } = useAuth();
+  const { pathname } = useLocation();
   const links = [
     { to: "/dashboard", label: d.nav.dashboard, icon: LayoutGrid },
     { to: "/interviews/new", label: d.nav.newInterview, icon: Plus },
@@ -22,18 +24,18 @@ export function AppLayout() {
 
   return (
     <div className="min-h-dvh bg-bg">
-      <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur-sm">
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-8 px-4 sm:px-6">
+      <header className="sticky top-0 z-40 border-b border-border/70 bg-bg/80 backdrop-blur-md">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-6 px-4 sm:px-6">
           <Logo to="/dashboard" />
-          <nav className="hidden h-full items-center gap-6 md:flex">
+          <nav className="hidden items-center gap-1 md:flex" aria-label={d.nav.menu}>
             {links.map((l) => (
-              <NavLink
-                key={l.to}
-                to={l.to}
-                end
-                className={({ isActive }) => cn("flex h-full items-center border-b-2 text-sm transition-colors", isActive ? "border-fg font-medium text-fg" : "border-transparent text-muted hover:text-fg")}
-              >
-                {l.label}
+              <NavLink key={l.to} to={l.to} end className={({ isActive }) => cn("relative rounded-lg px-3 py-1.5 text-sm transition-colors", isActive ? "font-medium text-fg" : "text-muted hover:text-fg")}>
+                {({ isActive }) => (
+                  <>
+                    {isActive && <m.span layoutId="nav-pill" className="absolute inset-0 rounded-lg bg-surface shadow-sm ring-1 ring-border" transition={{ type: "spring", bounce: 0.15, duration: 0.4 }} />}
+                    <span className="relative">{l.label}</span>
+                  </>
+                )}
               </NavLink>
             ))}
           </nav>
@@ -42,7 +44,7 @@ export function AppLayout() {
             <ThemeToggle />
             <Menu>
               <MenuTrigger asChild>
-                <button className="ms-1 grid size-8 place-items-center rounded-full border border-border-strong bg-surface text-xs font-semibold text-fg outline-none focus-visible:ring-3 focus-visible:ring-primary/30" aria-label={d.nav.menu}>
+                <button className="press ms-1 grid size-8 place-items-center rounded-full bg-ink text-[11px] font-semibold text-ink-fg outline-none focus-visible:ring-3 focus-visible:ring-primary/30" aria-label={d.nav.menu}>
                   {user ? initials(user.name) : ""}
                 </button>
               </MenuTrigger>
@@ -60,22 +62,36 @@ export function AppLayout() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 pt-8 pb-28 sm:px-6 sm:pt-12 md:pb-20">
+      <m.main
+        key={pathname}
+        initial={{ opacity: 0, y: 6 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.22 }}
+        className="mx-auto max-w-6xl px-4 pt-6 pb-28 sm:px-6 sm:pt-10 md:pb-20"
+      >
         <Outlet />
-      </main>
+      </m.main>
 
-      {/* Mobile: compact bottom tab bar (thumb-reachable, never covers content thanks to main's padding) */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-bg/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm md:hidden" aria-label={d.nav.menu}>
-        <div className="grid grid-cols-3">
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end
-              className={({ isActive }) => cn("flex h-14 flex-col items-center justify-center gap-0.5 text-[11px] transition-colors", isActive ? "font-medium text-fg" : "text-subtle")}
-            >
-              <l.icon className="size-5" strokeWidth={1.75} />
-              {l.label}
+      {/* Mobile: bottom tab bar; "New interview" is the raised primary action. */}
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-border/70 bg-bg/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-md md:hidden" aria-label={d.nav.menu}>
+        <div className="grid h-16 grid-cols-3">
+          {links.map((l, i) => (
+            <NavLink key={l.to} to={l.to} end className={({ isActive }) => cn("press flex flex-col items-center justify-center gap-1 text-[11px] transition-colors", isActive ? "font-medium text-fg" : "text-subtle")}>
+              {({ isActive }) =>
+                i === 1 ? (
+                  <>
+                    <span className={cn("grid h-8 w-11 place-items-center rounded-full text-white shadow-md ai-gradient", isActive && "ring-4 ring-primary/15")}>
+                      <l.icon className="size-[18px]" strokeWidth={2.25} />
+                    </span>
+                    {l.label}
+                  </>
+                ) : (
+                  <>
+                    <l.icon className="size-5" strokeWidth={isActive ? 2.1 : 1.75} />
+                    {l.label}
+                  </>
+                )
+              }
             </NavLink>
           ))}
         </div>
