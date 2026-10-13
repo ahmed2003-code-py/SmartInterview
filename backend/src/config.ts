@@ -36,6 +36,8 @@ export const config = {
     baseUrl: env.LLM_BASE_URL || "https://api.groq.com/openai/v1",
     apiKey: env.GROQ_API_KEY ?? "",
     model: env.LLM_MODEL || "openai/gpt-oss-120b",
+    // Used when the main model is rate-limited or failing (Groq limits are per model).
+    fallbackModel: env.LLM_FALLBACK_MODEL || "openai/gpt-oss-20b",
   },
   limits: {
     maxAudioBytes: 8 * 1024 * 1024,

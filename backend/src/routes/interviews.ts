@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { HttpError } from "../middleware/errors.js";
 import { getSTT, type Lang } from "../providers/stt.js";
 import { streamQuestionAudio, ttsConfigured } from "../providers/tts.js";
+import { buildCvProfile, CV_MAX_BYTES } from "../services/cv.js";
 import * as interviews from "../services/interviews.js";
 
 export const interviewsRouter = Router();
@@ -49,6 +50,7 @@ const CreateSchema = z.object({
   difficulty: z.enum(["beginner", "intermediate", "advanced"]),
   length: z.enum(["quick", "standard", "full"]),
   jobDescription: z.string().max(10_000).optional().nullable(),
+  cvProfile: z.string().max(2_000).optional().nullable(),
 });
 
 const AnswerSchema = z.object({
@@ -138,4 +140,13 @@ interviewsRouter.get("/:id/questions/:questionId/audio", ttsLimiter, async (req,
       else res.status(503).json({ error: "TTS_UNAVAILABLE", message: "Voice is not available right now" });
     },
   });
+});
+
+// CV upload (optional personalization). Processed in memory; returns only a short profile.
+const cvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: CV_MAX_BYTES, files: 1 } });
+
+interviewsRouter.post("/cv", aiLimiter, cvUpload.single("cv"), async (req, res) => {
+  if (!req.file) throw new HttpError(400, "NO_FILE", "No file received");
+  const profile = await buildCvProfile(req.file.buffer, req.file.originalname);
+  res.json({ fileName: req.file.originalname.slice(0, 120), profile });
 });

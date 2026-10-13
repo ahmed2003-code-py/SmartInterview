@@ -20,7 +20,7 @@
   --surface-2: #f1efea;
   --text: #1b1a17;
   --text-muted: #5f5b53;
-  --text-subtle: #8f8a80;
+  --text-subtle: #7f7a70;
   --border: #e6e2da;
   --border-strong: #d3cec4;
   --ink: #1b1a17; /* neutral dark surface (interviewer avatar, CTA band) */
@@ -51,7 +51,7 @@
   --surface-2: #232328;
   --text: #ecebe8;
   --text-muted: #a3a09a;
-  --text-subtle: #75726c;
+  --text-subtle: #85827b;
   --border: #29292f;
   --border-strong: #3a3a41;
   --ink: #ecebe8;
@@ -149,6 +149,41 @@
   button:not(:disabled),
   [role="button"]:not(:disabled) {
     cursor: pointer;
+  }
+}
+
+/* ---------- Type scale (one source of truth for the whole app) ---------- */
+@layer components {
+  .t-page {
+    font-family: var(--font-display);
+    font-size: 1.75rem;
+    line-height: 1.15;
+    font-weight: 450;
+  }
+  .t-section {
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+  .t-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-muted);
+  }
+  .t-caption {
+    font-size: 0.8125rem;
+    color: var(--text-subtle);
+  }
+  .t-metric {
+    font-family: var(--font-display);
+    font-size: 2.25rem;
+    line-height: 1;
+    font-weight: 450;
+    font-variant-numeric: tabular-nums;
+  }
+  @media (min-width: 640px) {
+    .t-page {
+      font-size: 2.125rem;
+    }
   }
 }
 

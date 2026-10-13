@@ -29,10 +29,11 @@ const TurnSchema = z.object({
 });
 
 const ReportSchema = z.object({
-  strengths: z.array(text(300)).min(1).max(5),
-  improvements: z.array(text(300)).min(1).max(5),
-  practiceAreas: z.array(text(120)).min(1).max(5),
-  generalFeedback: text(1500),
+  strengths: z.array(text(300)).min(1).max(4),
+  improvements: z.array(text(300)).min(1).max(4),
+  practiceAreas: z.array(text(160)).min(1).max(4),
+  generalFeedback: text(900),
+  questions: z.array(z.object({ feedback: text(600), suggestedAnswer: text(1000) })).optional(),
 });
 
 /** "Reaction. Question?" — adds a sentence break if the model left none; drops reactions that are themselves questions. */
@@ -83,11 +84,32 @@ async function llmTurn(input: TurnInput, retryNote?: string): Promise<TurnResult
   return { ...r, nextQuestion, responseLanguage: language };
 }
 
+/** Word-overlap similarity (0..1) between two questions, ignoring very short words. */
+function similarity(a: string, b: string) {
+  const words = (t: string) => new Set(t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter((w) => w.length > 3));
+  const A = words(a);
+  const B = words(b);
+  if (!A.size || !B.size) return 0;
+  let common = 0;
+  for (const w of A) if (B.has(w)) common++;
+  return common / Math.min(A.size, B.size);
+}
+
 export async function evaluateTurn(input: TurnInput): Promise<TurnResult> {
   let result: TurnResult;
   if (config.mockAI) result = { ...(await mockTurn(input)), responseLanguage: input.ctx.language };
   else {
     result = await llmTurn(input);
+    // A real interviewer moves on after two follow-ups and never asks the same thing twice.
+    const previous = [...input.history.map((h) => h.question), input.question];
+    const repeated = result.nextQuestion ? previous.find((q) => similarity(q, result.nextQuestion!) >= 0.6) : undefined;
+    const stuck = input.consecutiveFollowUps >= 2 && result.decision === "FOLLOW_UP";
+    if (result.nextQuestion && (repeated || stuck)) {
+      result = await llmTurn(
+        input,
+        `IMPORTANT: your previous attempt ${stuck ? "stayed on the same thread after two follow-ups" : "repeated an earlier question"}. Move to a DIFFERENT area now (decision NEXT_TOPIC) and do not ask again about: "${(repeated ?? input.question).slice(0, 160)}".`,
+      );
+    }
     // An explicit "talk to me in English/Arabic" must be honoured: retry once if the question came back in the other script.
     const wanted = input.ctx.languageMode === "smart" ? input.requestedLanguage : null;
     const wrong = wanted && result.nextQuestion && (wanted === "en" ? result.responseLanguage !== "en" : result.responseLanguage === "en");
@@ -105,7 +127,18 @@ export async function evaluateTurn(input: TurnInput): Promise<TurnResult> {
   return result;
 }
 
-export async function writeReport(ctx: InterviewContext, items: { question: string; answer: string; score: number; feedback: string }[], categoryScores: Record<keyof Criteria, number>, overall: number): Promise<ReportText> {
-  if (config.mockAI) return mockReport(ctx, categoryScores, overall);
-  return ask(ReportSchema, reportPrompt(ctx, items, categoryScores, overall), 900);
+export async function writeReport(
+  ctx: InterviewContext,
+  items: { question: string; answer: string; score: number; feedback: string }[],
+  categoryScores: Record<keyof Criteria, number>,
+  overall: number,
+  reportLanguage: "ar" | "en",
+): Promise<ReportText & { questions?: { feedback: string; suggestedAnswer: string }[] }> {
+  if (config.mockAI) return mockReport({ ...ctx, language: reportLanguage }, categoryScores, overall);
+  // Per-question notes were written in the interview's starting language; in smart mode the report
+  // language can differ, so those notes are rewritten too (never mixed languages in one report).
+  const rewrite = reportLanguage !== ctx.language;
+  const result = await ask(ReportSchema, reportPrompt(ctx, items, categoryScores, overall, reportLanguage, rewrite), rewrite ? 2200 : 900);
+  if (rewrite && result.questions?.length !== items.length) delete result.questions;
+  return result;
 }

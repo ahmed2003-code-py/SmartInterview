@@ -70,6 +70,8 @@ export interface QuestionDTO {
 
 export interface ReportDTO {
   overallScore: number;
+  /** Language the report text is written in; the report page renders in it. */
+  language: "ar" | "en" | null;
   categoryScores: Record<Criterion, number>;
   strengths: string[];
   improvements: string[];
@@ -86,6 +88,7 @@ export interface InterviewDTO {
   length: Length;
   maxQuestions: number;
   hasJobDescription: boolean;
+  hasCv: boolean;
   isMock: boolean;
   overallScore: number | null;
   startedAt: string;

@@ -46,6 +46,8 @@ model Interview {
   length         String // "quick" | "standard" | "full"
   maxQuestions   Int
   jobDescription String?
+  /// Short candidate profile condensed from an uploaded CV (no contact details). The CV file itself is never stored.
+  cvProfile      String?
   topics         String[]
   status         InterviewStatus @default(IN_PROGRESS)
   isMock         Boolean         @default(false)
@@ -97,6 +99,8 @@ model Report {
   interviewId     String    @unique
   interview       Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
   overallScore    Int
+  /// Language all report text is written in ("ar" | "en").
+  language        String?
   categoryScores  Json
   strengths       String[]
   improvements    String[]

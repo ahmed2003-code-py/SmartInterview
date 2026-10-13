@@ -19,6 +19,8 @@ export interface InterviewContext {
   languageMode: "fixed" | "smart";
   maxQuestions: number;
   jobDescription: string | null;
+  /** Short profile condensed from the candidate's CV (untrusted data). */
+  cvProfile: string | null;
   topics: string[];
 }
 

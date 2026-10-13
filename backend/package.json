@@ -24,8 +24,10 @@
     "express-rate-limit": "^8.7.1",
     "helmet": "^8.3.0",
     "jsonwebtoken": "^9.0.3",
+    "mammoth": "^1.13.0",
     "multer": "^2.4.0",
     "prisma": "^6.19.3",
+    "unpdf": "^1.7.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

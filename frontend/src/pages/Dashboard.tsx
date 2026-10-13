@@ -9,6 +9,7 @@ import { useFetch } from "@/hooks/useFetch";
 import { api, type InterviewSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useI18n } from "@/i18n";
+import { PageHeader } from "@/components/layout/PageHeader";
 
 interface DashboardData {
   totalInterviews: number;
@@ -21,18 +22,18 @@ interface DashboardData {
 
 function Stat({ label, value, suffix, loading }: { label: string; value: string | number | null; suffix?: string; loading?: boolean }) {
   return (
-    <div>
-      <dt className="text-[13px] text-muted">{label}</dt>
-      <dd className="mt-2 font-display text-[2.5rem] leading-none font-[450] tabular-nums">
-        {loading ? <Skeleton className="h-10 w-20" /> : (value ?? "—")}
-        {!loading && value != null && suffix && <span className="font-sans text-base text-subtle">{suffix}</span>}
+    <div className="min-w-0 px-4 py-4 sm:px-5">
+      <dt className="t-label truncate">{label}</dt>
+      <dd className="t-metric mt-2">
+        {loading ? <Skeleton className="h-9 w-16" /> : (value ?? "—")}
+        {!loading && value != null && suffix && <span className="font-sans text-sm text-subtle">{suffix}</span>}
       </dd>
     </div>
   );
 }
 
 export default function Dashboard() {
-  const { d, fmt, lang, formatDuration } = useI18n();
+  const { d, fmt, lang } = useI18n();
   const { user } = useAuth();
   const { data, loading, error, reload } = useFetch(() => api.get<DashboardData>("/dashboard"), []);
   const firstName = user?.name.split(" ")[0] ?? "";
@@ -41,40 +42,40 @@ export default function Dashboard() {
 
   return (
     <div className="animate-fade-up">
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <div>
-          <h1 className="font-display text-[2.3rem] leading-tight font-[450] sm:text-[2.75rem]">{fmt(d.dashboard.welcome, { name: firstName })}</h1>
-          <p className="mt-2 text-muted">{d.dashboard.subtitle}</p>
-        </div>
-        <Button asChild size="lg">
-          <Link to="/interviews/new">
-            {d.nav.newInterview}
-            <ArrowRight className="size-4 rtl:-scale-x-100" />
-          </Link>
-        </Button>
-      </div>
+      <PageHeader
+        title={fmt(d.dashboard.welcome, { name: firstName })}
+        description={d.dashboard.subtitle}
+        actions={
+          <Button asChild size="lg">
+            <Link to="/interviews/new">
+              {d.nav.newInterview}
+              <ArrowRight className="size-4 rtl:-scale-x-100" />
+            </Link>
+          </Button>
+        }
+      />
 
       {error ? (
         <ErrorState className="mt-10" onRetry={reload} />
       ) : isEmpty ? (
-        <div className="mt-12 border-y border-border">
+        <div className="mt-10 rounded-xl border border-dashed border-border-strong">
           <EmptyState
             title={d.dashboard.emptyTitle}
             body={d.dashboard.emptyBody}
-            className="py-20"
+            className="py-16"
             action={
               <Button asChild>
-                <Link to="/interviews/new">{d.common.startPracticing}</Link>
+                <Link to="/interviews/new">{d.dashboard.firstInterview}</Link>
               </Button>
             }
           />
         </div>
       ) : (
         <>
-          <dl className="mt-12 grid grid-cols-2 gap-x-10 gap-y-8 border-y border-border py-8 sm:flex sm:gap-x-20">
-            <Stat label={d.dashboard.averageScore} value={data?.averageScore ?? null} suffix=" / 100" loading={loading} />
+          <dl className="mt-8 grid grid-cols-3 divide-x divide-border rounded-xl border border-border bg-surface rtl:divide-x-reverse">
             <Stat label={d.dashboard.totalInterviews} value={data?.totalInterviews ?? null} loading={loading} />
-            <Stat label={d.dashboard.practiceTime} value={data?.practiceSeconds ? formatDuration(data.practiceSeconds) : null} loading={loading} />
+            <Stat label={d.dashboard.averageScore} value={data?.averageScore ?? null} loading={loading} />
+            <Stat label={d.dashboard.bestScore} value={data?.bestScore ?? null} loading={loading} />
           </dl>
 
           {inProgress && (
@@ -99,25 +100,25 @@ export default function Dashboard() {
             </Link>
           )}
 
-          <section className="mt-14">
+          {(loading || (data && data.trend.length > 1)) && (
+          <section className="mt-10">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="font-medium">{d.dashboard.trendTitle}</h2>
+              <h2 className="t-section">{d.dashboard.trendTitle}</h2>
               {data && data.trend.length > 1 && <p className="text-[13px] text-subtle">{fmt(d.dashboard.trendSubtitle, { n: data.trend.length })}</p>}
             </div>
             <div className="mt-4">
               {loading || !data ? (
                 <Skeleton className="h-[220px] w-full" />
-              ) : data.trend.length < 2 ? (
-                <div className="grid h-[160px] place-items-center rounded-lg border border-dashed border-border-strong px-6 text-center text-sm text-muted">{d.dashboard.trendEmpty}</div>
               ) : (
                 <ScoreTrend points={data.trend} />
               )}
             </div>
           </section>
+          )}
 
-          <section className="mt-14">
+          <section className="mt-10">
             <div className="mb-3 flex items-baseline justify-between">
-              <h2 className="font-medium">{d.dashboard.recentTitle}</h2>
+              <h2 className="t-section">{d.dashboard.recentTitle}</h2>
               <Link to="/history" className="text-sm text-muted hover:text-fg">
                 {d.dashboard.viewAll}
               </Link>

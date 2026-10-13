@@ -4,7 +4,7 @@ import { config, QUESTION_COUNTS, type InterviewLength } from "../config.js";
 import { HttpError } from "../middleware/errors.js";
 import { evaluateTurn, planInterview, writeReport } from "../ai/interviewer.js";
 import { CRITERIA, type Criteria, type InterviewContext, type SpokenLanguage } from "../ai/types.js";
-import { detectLanguageRequest } from "../ai/language.js";
+import { arabicShare, detectLanguageRequest } from "../ai/language.js";
 
 const MAX_DURATION_SEC = 2 * 60 * 60;
 
@@ -27,6 +27,7 @@ function contextFor(interview: Interview & { role: Role }): InterviewContext {
     languageMode: interview.languageMode === "smart" ? "smart" : "fixed",
     maxQuestions: interview.maxQuestions,
     jobDescription: interview.jobDescription,
+    cvProfile: interview.cvProfile,
     topics: interview.topics,
   };
 }
@@ -49,6 +50,7 @@ function serialize(interview: InterviewDetail) {
     length: interview.length,
     maxQuestions: interview.maxQuestions,
     hasJobDescription: Boolean(interview.jobDescription),
+    hasCv: Boolean(interview.cvProfile),
     isMock: interview.isMock,
     overallScore: interview.overallScore,
     startedAt: interview.startedAt,
@@ -83,7 +85,7 @@ function serialize(interview: InterviewDetail) {
 
 export async function createInterview(
   userId: string,
-  input: { roleId: string; language: "en" | "ar"; languageMode?: "fixed" | "smart"; difficulty: InterviewContext["difficulty"]; length: InterviewLength; jobDescription?: string | null },
+  input: { roleId: string; language: "en" | "ar"; languageMode?: "fixed" | "smart"; difficulty: InterviewContext["difficulty"]; length: InterviewLength; jobDescription?: string | null; cvProfile?: string | null },
 ) {
   const role = await prisma.role.findUnique({ where: { id: input.roleId } });
   if (!role) throw new HttpError(400, "INVALID_ROLE", "Unknown role");
@@ -91,7 +93,8 @@ export async function createInterview(
   const maxQuestions = QUESTION_COUNTS[input.length];
   const jobDescription = input.jobDescription?.trim().slice(0, config.limits.maxJobDescriptionChars) || null;
   const languageMode = input.languageMode ?? "fixed";
-  const draft = { role, language: input.language, languageMode, difficulty: input.difficulty, maxQuestions, jobDescription, topics: [] } as unknown as Interview & { role: Role };
+  const cvProfile = input.cvProfile?.trim().slice(0, 2_000) || null;
+  const draft = { role, language: input.language, languageMode, difficulty: input.difficulty, maxQuestions, jobDescription, cvProfile, topics: [] } as unknown as Interview & { role: Role };
   const plan = await planInterview(contextFor(draft));
 
   const interview = await prisma.interview.create({
@@ -104,6 +107,7 @@ export async function createInterview(
       length: input.length,
       maxQuestions,
       jobDescription,
+      cvProfile,
       topics: plan.topics,
       isMock: config.mockAI,
       questions: { create: { order: 1, text: plan.firstQuestion.text, language: input.language, kind: "MAIN", topic: plan.firstQuestion.topic } },
@@ -217,20 +221,33 @@ export async function finishInterview(userId: string, id: string) {
   // Record the end time before the (possibly failing) AI call so a retry keeps the real duration.
   if (!interview.endedAt) await prisma.interview.update({ where: { id }, data: { endedAt, durationSec } });
 
-  const text = await writeReport(
+  // Report language: fixed interviews use their language; smart interviews use the language that
+  // dominates the student's answers. Every report text field (and label in the UI) follows it.
+  const reportLanguage: "ar" | "en" =
+    interview.languageMode === "smart"
+      ? arabicShare(answered.map((q) => q.answer!.transcript).join(" ")) >= 0.5
+        ? "ar"
+        : "en"
+      : interview.language === "ar"
+        ? "ar"
+        : "en";
+
+  const { questions: rewritten, ...text } = await writeReport(
     contextFor(interview),
     answered.map((q) => ({ question: q.text, answer: q.answer!.transcript, score: q.answer!.score, feedback: q.answer!.feedback })),
     categoryScores,
     overall,
+    reportLanguage,
   );
 
   await prisma.$transaction([
+    ...(rewritten ?? []).map((r, i) => prisma.answer.update({ where: { id: answered[i].answer!.id }, data: { feedback: r.feedback, suggestedAnswer: r.suggestedAnswer } })),
     // Unanswered trailing question (interview ended early) is not part of the report.
     prisma.question.deleteMany({ where: { interviewId: id, answer: null } }),
     prisma.report.upsert({
       where: { interviewId: id },
-      create: { interviewId: id, overallScore: overall, categoryScores, ...text },
-      update: { overallScore: overall, categoryScores, ...text },
+      create: { interviewId: id, overallScore: overall, language: reportLanguage, categoryScores, ...text },
+      update: { overallScore: overall, language: reportLanguage, categoryScores, ...text },
     }),
     prisma.interview.update({ where: { id }, data: { status: "COMPLETED", overallScore: overall, endedAt, durationSec } }),
   ]);
