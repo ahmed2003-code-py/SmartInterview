@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: interview-sim-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: interview
+      POSTGRES_PASSWORD: interview
+      POSTGRES_DB: interview_sim
+    ports:
+      - "5436:5432"
+    volumes:
+      - interview_db:/var/lib/postgresql/data
+volumes:
+  interview_db:

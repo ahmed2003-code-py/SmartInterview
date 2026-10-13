@@ -1,0 +1,104 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String      @id @default(cuid())
+  name         String
+  email        String      @unique
+  passwordHash String
+  createdAt    DateTime    @default(now())
+  interviews   Interview[]
+}
+
+model Role {
+  id            String      @id @default(cuid())
+  slug          String      @unique
+  nameEn        String
+  nameAr        String
+  descriptionEn String
+  descriptionAr String
+  focusAreas    String[]
+  sortOrder     Int         @default(0)
+  interviews    Interview[]
+}
+
+enum InterviewStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+model Interview {
+  id             String          @id @default(cuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId         String
+  role           Role            @relation(fields: [roleId], references: [id])
+  language       String // "en" | "ar"
+  difficulty     String // "beginner" | "intermediate" | "advanced"
+  length         String // "quick" | "standard" | "full"
+  maxQuestions   Int
+  jobDescription String?
+  topics         String[]
+  status         InterviewStatus @default(IN_PROGRESS)
+  isMock         Boolean         @default(false)
+  overallScore   Int?
+  startedAt      DateTime        @default(now())
+  endedAt        DateTime?
+  durationSec    Int?
+  questions      Question[]
+  report         Report?
+
+  @@index([userId, startedAt])
+}
+
+model Question {
+  id          String    @id @default(cuid())
+  interviewId String
+  interview   Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  order       Int
+  text        String
+  kind        String // "MAIN" | "FOLLOW_UP"
+  topic       String?
+  createdAt   DateTime  @default(now())
+  answer      Answer?
+
+  @@unique([interviewId, order])
+}
+
+// An answer and its per-answer evaluation.
+model Answer {
+  id                   String   @id @default(cuid())
+  questionId           String   @unique
+  question             Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  transcript           String
+  durationSec          Int?
+  relevance            Int
+  clarity              Int
+  communication        Int
+  subjectKnowledge     Int
+  educationalReasoning Int
+  score                Int // 0-100, derived from the five criteria
+  feedback             String
+  suggestedAnswer      String
+  createdAt            DateTime @default(now())
+}
+
+model Report {
+  id              String    @id @default(cuid())
+  interviewId     String    @unique
+  interview       Interview @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  overallScore    Int
+  categoryScores  Json
+  strengths       String[]
+  improvements    String[]
+  practiceAreas   String[]
+  generalFeedback String
+  createdAt       DateTime  @default(now())
+}
