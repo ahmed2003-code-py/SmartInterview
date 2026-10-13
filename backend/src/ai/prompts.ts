@@ -71,7 +71,9 @@ export function turnPrompt(ctx: InterviewContext, history: HistoryItem[], questi
       "Write 'feedback' (1-2 sentences, specific and constructive, addressed to the candidate) and 'suggestedAnswer' (a model answer outline of 2-4 sentences).",
       "",
       "Task 2 - Decide what happens next:",
-      "FOLLOW_UP if the answer was vague, missed an important part, or deserves one deeper probe (never follow up more than once in a row on the same topic).",
+      currentKind === "FOLLOW_UP"
+        ? "The current question was already a follow-up, so do NOT choose FOLLOW_UP: move on with NEXT_TOPIC (a different planned topic)."
+        : "FOLLOW_UP if the answer was vague, missed an important part, or deserves one deeper probe.",
       "NEXT_TOPIC to move to an uncovered planned topic.",
       remaining <= 0 ? "This was the last allowed question: decision MUST be FINISH and nextQuestion null." : `FINISH only if every planned topic is well covered (${remaining} question(s) remain).`,
       "Never repeat or rephrase a question that was already asked. The next question may briefly acknowledge the answer in a few words, then ask.",
@@ -90,7 +92,7 @@ export function reportPrompt(ctx: InterviewContext, items: { question: string; a
       "",
       `Category averages (0-100): ${JSON.stringify(categoryScores)}. Overall: ${overall}/100. These scores are final; do not recompute them.`,
       "",
-      "Write the final report addressed to the candidate, consistent with these scores:",
+      "Write the final report speaking directly to the student in the second person (\"you\" / \"أنت\"), never \"the candidate\" / \"المرشح\". Keep it consistent with these scores:",
       "- strengths: 2-4 specific strengths observed in the answers",
       "- improvements: 2-4 specific, actionable areas to improve",
       "- practiceAreas: 2-4 short practice topics (a few words each)",

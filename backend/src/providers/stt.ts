@@ -6,7 +6,7 @@ export type Lang = "en" | "ar";
 
 export interface STTProvider {
   name: string;
-  /** `question` gives the model context (helps with domain words); it is not stored. */
+  /** `question` is only used by the mock provider to pick a matching simulated answer. */
   transcribe(audio: Buffer, mimeType: string, language: Lang, question?: string): Promise<string>;
 }
 
@@ -36,12 +36,16 @@ interface VerboseTranscription {
   segments?: VerboseSegment[];
 }
 
+const normalize = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
 /**
- * Turns a verbose Whisper result into the answer text.
- * Drops segments Whisper itself marks as probable silence, plus known hallucinated phrases.
- * Thresholds follow Whisper's own silence rule, so normal (even quiet) speech is kept.
+ * Turns a verbose Whisper result into the answer text. Rejects (returns ""):
+ * - segments Whisper marks as probable silence (Whisper's own rule, so quiet speech is kept)
+ * - known hallucinated phrases ("Thank you for watching", subtitle credits, ...)
+ * - output with no letters at all (".", "...")
+ * - an echo of the context prompt, which Whisper produces on silent audio
  */
-export function cleanTranscription(result: VerboseTranscription): string {
+export function cleanTranscription(result: VerboseTranscription, prompt = ""): string {
   const segments = result.segments ?? [];
   const kept = segments.length
     ? segments.filter((s) => {
@@ -54,7 +58,9 @@ export function cleanTranscription(result: VerboseTranscription): string {
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
-  if (!text || isHallucination(text)) return "";
+  if (!text || isHallucination(text) || !/\p{L}/u.test(text)) return "";
+  const n = normalize(text);
+  if (prompt && n.length > 1 && normalize(prompt).includes(n)) return "";
   return text;
 }
 
@@ -67,7 +73,9 @@ function extFor(mimeType: string) {
   return "webm";
 }
 
-// A short context prompt helps Whisper with domain words and Arabic/English mixing.
+// A short, fixed domain prompt keeps English teaching terms in Latin script inside Arabic answers
+// ("lesson plan", "group work"). The question itself is not included: on silent audio Whisper
+// tends to echo or invent text from whatever context it was given.
 const WHISPER_PROMPT: Record<Lang, string> = {
   en: "A job interview for a teaching position. Classroom management, lesson planning, assessment.",
   ar: "مقابلة عمل لوظيفة تدريس. إدارة الفصل، تخطيط الدروس، التقييم، الطلاب، الـ lesson plan.",
@@ -76,14 +84,15 @@ const WHISPER_PROMPT: Record<Lang, string> = {
 /** Groq Whisper (whisper-large-v3-turbo). Audio stays in memory and is discarded after the request. */
 const groqWhisper: STTProvider = {
   name: "groq-whisper",
-  async transcribe(audio, mimeType, language, question) {
+  async transcribe(audio, mimeType, language) {
+    const prompt = WHISPER_PROMPT[language];
     const form = new FormData();
     form.append("file", new Blob([new Uint8Array(audio)], { type: mimeType }), `answer.${extFor(mimeType)}`);
     form.append("model", config.stt.groqModel);
     form.append("language", language);
     form.append("temperature", "0");
     form.append("response_format", "verbose_json");
-    form.append("prompt", question ? `${WHISPER_PROMPT[language]} ${question}`.slice(0, 600) : WHISPER_PROMPT[language]);
+    form.append("prompt", prompt);
 
     let res: Response;
     try {
@@ -101,7 +110,7 @@ const groqWhisper: STTProvider = {
       console.error("STT error", res.status, (await res.text()).slice(0, 300));
       throw new HttpError(502, "STT_FAILED", "Transcription failed");
     }
-    return cleanTranscription((await res.json()) as VerboseTranscription);
+    return cleanTranscription((await res.json()) as VerboseTranscription, prompt);
   },
 };
 

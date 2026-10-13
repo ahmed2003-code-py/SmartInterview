@@ -65,6 +65,8 @@ export async function evaluateTurn(input: TurnInput): Promise<TurnResult> {
   if (isLast || !result.nextQuestion) return { ...result, decision: "FINISH", nextQuestion: null };
   if (result.decision === "FINISH" && input.questionNumber < minQuestions) return { ...result, decision: "NEXT_TOPIC" };
   if (result.decision === "FINISH") return { ...result, nextQuestion: null };
+  // Never two follow-ups in a row: treat a second one as a new main question.
+  if (result.decision === "FOLLOW_UP" && input.currentKind === "FOLLOW_UP") return { ...result, decision: "NEXT_TOPIC" };
   return result;
 }
 

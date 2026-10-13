@@ -27,6 +27,7 @@ interface RoomError {
 }
 
 const SILENCE_PEAK = 0.012;
+const MIN_VOICED_SEC = 0.4;
 
 export default function InterviewRoom() {
   const { id } = useParams<{ id: string }>();
@@ -133,6 +134,7 @@ export default function InterviewRoom() {
     setPhase("TRANSCRIBING");
     const form = new FormData();
     form.append("audio", rec.blob, `answer.${rec.blob.type.includes("mp4") ? "m4a" : rec.blob.type.includes("ogg") ? "ogg" : "webm"}`);
+    if (Number.isFinite(rec.voicedSec)) form.append("voicedSec", rec.voicedSec.toFixed(2));
     try {
       const { transcript } = await api.post<{ transcript: string }>(`/interviews/${id}/transcribe`, form);
       setDraft(transcript);
@@ -171,7 +173,7 @@ export default function InterviewRoom() {
       setPhase("WAITING_FOR_USER");
       return setError({ message: d.room.errors.tooShort });
     }
-    if (rec.peak < SILENCE_PEAK) {
+    if (rec.peak < SILENCE_PEAK || rec.voicedSec < MIN_VOICED_SEC) {
       setPhase("WAITING_FOR_USER");
       return setError({ message: d.room.errors.noSpeech });
     }

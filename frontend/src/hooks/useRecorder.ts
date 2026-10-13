@@ -7,10 +7,14 @@ export interface Recording {
   durationSec: number;
   /** Loudest level seen (0..1). Near zero means the mic captured silence. */
   peak: number;
+  /** Seconds where the input was loud enough to be speech. */
+  voicedSec: number;
 }
 
 const MIME_TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"];
 const BARS = 40;
+// RMS level above which a frame counts as speech (silence/room noise sits well below).
+const VOICE_RMS = 0.02;
 
 export const recordingSupported = typeof window !== "undefined" && !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== "undefined";
 
@@ -30,6 +34,7 @@ export function useRecorder(maxSeconds: number) {
   const timerRef = useRef<number>(0);
   const startRef = useRef(0);
   const peakRef = useRef(0);
+  const voicedRef = useRef(0);
   const chunksRef = useRef<Blob[]>([]);
   const stopResolveRef = useRef<((r: Recording | null) => void) | null>(null);
   const autoStopRef = useRef<(() => void) | null>(null);
@@ -73,6 +78,7 @@ export function useRecorder(maxSeconds: number) {
     streamRef.current = stream;
     chunksRef.current = [];
     peakRef.current = 0;
+    voicedRef.current = 0;
 
     const mimeType = MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
     const rec = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 32_000 } : undefined);
@@ -82,7 +88,7 @@ export function useRecorder(maxSeconds: number) {
       const durationSec = Math.round((performance.now() - startRef.current) / 1000);
       const blob = new Blob(chunksRef.current, { type: (rec.mimeType || "audio/webm").split(";")[0] });
       cleanup();
-      stopResolveRef.current?.({ blob, durationSec, peak: peakRef.current });
+      stopResolveRef.current?.({ blob, durationSec, peak: peakRef.current, voicedSec: voicedRef.current });
       stopResolveRef.current = null;
     };
 
@@ -96,12 +102,17 @@ export function useRecorder(maxSeconds: number) {
       const data = new Uint8Array(analyser.fftSize);
       const history: number[] = Array(BARS).fill(0);
       let frame = 0;
+      let last = performance.now();
       const tick = () => {
+        const now = performance.now();
+        const dt = (now - last) / 1000;
+        last = now;
         analyser.getByteTimeDomainData(data);
         let sum = 0;
         for (const v of data) sum += ((v - 128) / 128) ** 2;
         const rms = Math.sqrt(sum / data.length);
         peakRef.current = Math.max(peakRef.current, rms);
+        if (rms > VOICE_RMS) voicedRef.current += Math.min(dt, 0.1);
         if (frame++ % 3 === 0) {
           history.shift();
           history.push(Math.min(1, rms * 5));
@@ -112,6 +123,7 @@ export function useRecorder(maxSeconds: number) {
       tick();
     } catch {
       peakRef.current = 1; // can't measure; don't block on silence detection
+      voicedRef.current = Infinity;
     }
 
     startRef.current = performance.now();

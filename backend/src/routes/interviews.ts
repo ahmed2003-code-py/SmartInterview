@@ -77,6 +77,9 @@ interviewsRouter.post("/:id/transcribe", aiLimiter, upload.single("audio"), asyn
   const interview = await interviews.assertActive(req.userId!, req.params.id as string);
   if (!req.file) throw new HttpError(400, "NO_AUDIO", "No audio received");
   if (!looksLikeAudio(req.file.buffer)) throw new HttpError(400, "INVALID_AUDIO", "Unsupported audio format");
+  // The browser measures how long the student actually spoke; skip paid STT for silent clips.
+  const voicedSec = Number(req.body?.voicedSec);
+  if (Number.isFinite(voicedSec) && voicedSec < 0.3) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
   const text = await getSTT().transcribe(req.file.buffer, req.file.mimetype, interview.language as Lang, interview.questions[0]?.text);
   if (!text) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
   res.json({ transcript: text.slice(0, config.limits.maxAnswerChars) });

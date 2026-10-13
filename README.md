@@ -1,138 +1,158 @@
 # SmartInterview · AI Interview Simulator
 
-A voice-based interview simulator for Faculty of Education students. The AI interviewer asks questions out loud, the student answers with the microphone, and the interviewer reacts with follow-up questions. At the end the student gets a scored report. Everything works in **Arabic and English**.
+A voice-based interview simulator for Faculty of Education students. The AI interviewer asks a question out loud, the student answers with the microphone, and the interviewer follows up based on what was actually said. At the end the student gets a scored report. Everything works in **Arabic (RTL) and English**.
 
-Graduation project.
+Graduation project. Live at **https://smartinterview-production.up.railway.app**
 
 ## Features
 
 - Register / log in
-- Interview setup: role, language (Arabic / English), difficulty, length, optional job description
-- Interview room: browser text-to-speech for the interviewer, microphone recording, a transcript you can review and edit, follow-up questions that depend on your answer
-- Final report: overall score, five category scores, strengths, areas to improve, practice areas, and per-question feedback with a stronger sample answer
-- Dashboard with progress, plus a history with filters
-- Light / dark / system theme, and full RTL layout in Arabic
-- **Demo mode** (`MOCK_AI=true`): the whole flow works with no internet and no API keys
+- Interview setup: role, language, difficulty, length, optional job description
+- Interview room: the interviewer's voice (browser TTS), microphone recording, a transcript the student can edit, contextual follow-ups
+- Report: overall score, five criteria, strengths, areas to improve, recommended practice, and per-question feedback with a stronger sample answer
+- Dashboard and history
+- Light / dark / system theme
+- **Demo mode** (`MOCK_AI=true`): the full flow works without internet or API keys
 
-## Tech stack
+## Stack
 
 | Part | Choice |
 |---|---|
-| Frontend | React 19, TypeScript, Vite, Tailwind CSS v4, Radix primitives, Lucide icons |
-| Backend | Node.js, Express 5, TypeScript, Zod |
+| Frontend | React 19, TypeScript, Vite, Tailwind CSS v4, Radix primitives |
+| Backend | Node.js 22, Express 5, TypeScript, Zod |
 | Database | PostgreSQL + Prisma |
-| Speech-to-text | Groq Whisper Large v3 Turbo (default) · Cohere Transcribe Arabic via a self-hosted OpenAI-compatible endpoint · mock |
-| LLM | `openai/gpt-oss-120b` on Groq (any OpenAI-compatible API works) |
+| Speech-to-text | Groq `whisper-large-v3-turbo` |
+| LLM | Groq `openai/gpt-oss-120b` (JSON output, validated server-side) |
 | Text-to-speech | Browser `speechSynthesis` (free) |
+| Hosting | Railway: one app service + Railway PostgreSQL |
 
-## Quick start
+## Architecture
 
-Requirements: Node.js 20+ and Docker (used only for PostgreSQL).
+```
+Browser ──► Railway service "smartinterview" (one Node process)
+              ├─ serves the built React app (SPA fallback to index.html)
+              └─ /api/*  ── Groq (Whisper + LLM)
+                         └─ PostgreSQL (Railway)
+```
+
+How one answer is handled:
+
+1. The browser records the answer. It measures how long the student actually spoke and doesn't upload silent clips.
+2. The backend sends the audio to Groq Whisper (`verbose_json`). The audio stays in memory and is discarded afterwards.
+3. Silence hallucinations ("Thank you for watching", subtitle credits, echoes of the prompt, empty punctuation) are rejected as "no speech".
+4. The student reviews or edits the transcript and submits it.
+5. **One LLM call** scores the answer on five criteria (1–10), writes feedback and a stronger sample answer, decides `FOLLOW_UP` / `NEXT_TOPIC` / `FINISH`, and writes the next question.
+6. The server validates the JSON (one retry if it is malformed), clamps scores, enforces the question limit and a minimum of 75% of questions before finishing, and never allows two follow-ups in a row.
+7. At the end the server computes every score itself. The LLM only writes the report text, so the numbers stay consistent.
+
+The job description is treated as untrusted data: it is wrapped in tags, and the model is told never to follow instructions inside it.
+
+## Local setup
+
+Requirements: Node.js 22 and Docker (used only for local PostgreSQL).
 
 ```bash
-npm run setup   # installs deps, creates backend/.env, starts Postgres, runs migrations, seeds roles + demo account
+npm run setup   # installs deps, creates backend/.env, starts Postgres, migrates, seeds roles + demo account
 npm run dev     # API on :4000, web app on http://localhost:5173
 ```
 
-Demo account: `demo@smartinterview.app` / `demo1234` (it already has four finished interviews).
+Demo account: `demo@smartinterview.app` / `demo1234`.
 
-### Using real AI
+### Real AI locally
 
-1. Create a free API key at <https://console.groq.com>.
-2. In `backend/.env`, set:
-   ```env
-   MOCK_AI=false
-   GROQ_API_KEY=gsk_...
-   ```
-3. Restart `npm run dev`.
+Get a key at <https://console.groq.com>, then in `backend/.env`:
 
-That single key is used for both speech-to-text and the LLM.
+```env
+MOCK_AI=false
+GROQ_API_KEY=gsk_...
+```
 
-### Production build
+`backend/.env` is gitignored. The key is only ever used by the backend and is never sent to the browser.
+
+## Environment variables (backend)
+
+| Variable | Required | Notes |
+|---|---|---|
+| `DATABASE_URL` | yes | PostgreSQL connection string |
+| `JWT_SECRET` | yes | Long random string |
+| `GROQ_API_KEY` | when `MOCK_AI=false` | Secret, backend only |
+| `MOCK_AI` | | `false` = real Groq, `true` = demo mode |
+| `NODE_ENV` | | `production` on Railway (secure cookies) |
+| `PORT` | | Set automatically by Railway |
+| `SEED_DEMO_ACCOUNT` | | `true` creates the demo account on startup if missing |
+| `GROQ_STT_MODEL` / `LLM_MODEL` | | Defaults: `whisper-large-v3-turbo` / `openai/gpt-oss-120b` |
+
+## Railway deployment
+
+Project `smartinterview` has two resources:
+
+- **`smartinterview`**: the application service (frontend + backend)
+- **`Postgres`**: Railway PostgreSQL
+
+Service variables: `NODE_ENV=production`, `MOCK_AI=false`, `GROQ_API_KEY` (secret), `JWT_SECRET` (generated), `DATABASE_URL=${{Postgres.DATABASE_URL}}`, `SEED_DEMO_ACCOUNT=true`.
+
+Railway uses the root scripts with no extra config:
+
+```
+npm ci         → postinstall installs backend + frontend
+npm run build  → builds the React app and compiles the API
+npm start      → prisma migrate deploy, then node backend/dist/server.js
+```
+
+`prisma migrate deploy` only applies new migrations and never resets data. Roles are upserted on every start, and the demo account is only created if it does not exist.
+
+Deploy from the repo root (already linked):
 
 ```bash
-npm run build
-npm start        # one process serves the API and the built frontend on PORT (default 4000)
+railway up --service smartinterview
 ```
 
-Browsers only allow microphone access on `https://` or `localhost`, so deploy behind HTTPS.
+Health check: `GET /api/health` → `{"status":"ok"}`.
 
-## Configuration (`backend/.env`)
+## Presentation fallback (no internet / Groq problem)
 
-| Variable | Default | Purpose |
-|---|---|---|
-| `MOCK_AI` | `true` | Demo mode: predefined questions, simulated transcripts, rule-based scores |
-| `STT_PROVIDER` | `groq` | `groq`, `cohere` or `mock` |
-| `GROQ_API_KEY` | | Groq key (STT + LLM) |
-| `GROQ_STT_MODEL` | `whisper-large-v3-turbo` | Whisper model |
-| `COHERE_STT_URL` | | OpenAI-compatible transcription URL, e.g. a vLLM server running `CohereLabs/cohere-transcribe-arabic-07-2026` |
-| `LLM_BASE_URL` | Groq | Any OpenAI-compatible base URL |
-| `LLM_MODEL` | `openai/gpt-oss-120b` | Chat model |
-| `DATABASE_URL` | local Docker DB | PostgreSQL connection string |
-| `JWT_SECRET` | generated by setup | Session signing secret |
+Switch production to demo mode:
 
-### Why Groq Whisper and not Cohere Transcribe Arabic?
-
-Cohere Transcribe Arabic (07-2026) is an open-weights 2B model with no hosted API, so it has to run on your own GPU server. Groq Whisper Large v3 Turbo is hosted, has a free tier, costs about **$0.04 per hour of audio**, and handles Arabic, Egyptian Arabic and English well enough for this project. If you host Cohere with vLLM later, set `STT_PROVIDER=cohere` and `COHERE_STT_URL`; no code changes are needed.
-
-## How an interview works
-
-```
-Setup ─► LLM plans topics + first question
-      ─► Browser speaks question (TTS)
-      ─► Student records answer ─► STT ─► editable transcript
-      ─► ONE LLM call: score the answer (5 criteria) + decide FOLLOW_UP / NEXT_TOPIC / FINISH + next question
-      ─► repeat until the question limit
-      ─► Server computes all scores ─► LLM writes the report text ─► saved to history
+```bash
+railway variables --service smartinterview --set "MOCK_AI=true"
 ```
 
-- **Scores are computed by the server**: each answer is the average of its five criteria (1–10) × 10, the overall score is the average of the answers, and each category score is that criterion's average. The LLM only writes the explanations, so the numbers stay consistent.
-- **The server enforces limits**: the question cap (Quick 4 / Standard 6 / Full 10), no early finish before 75% of the questions, validated JSON with one retry, and scores clamped to 1–10.
-- **The job description is untrusted**: it is wrapped in tags and the model is told never to follow instructions inside it.
-- The model never judges personality, honesty or emotion. It only judges the content of the answers.
+Changing a variable triggers a redeploy, which takes about 1–2 minutes. In the interview room a **Demo mode** badge confirms it is active. Switch back with `MOCK_AI=false`.
+
+If there is no internet at all, run it locally: `npm run dev` with `MOCK_AI=true` in `backend/.env`.
 
 ## Cost control
 
-- Audio goes only to STT, never to the LLM, and it is never stored.
+- Audio goes only to Whisper (about $0.04 per hour of audio) and is never stored. Silent clips are not uploaded.
+- One LLM call per answer, with capped output. Earlier answers are trimmed in the context.
 - Answers are capped at 2 minutes and 4,000 characters, and the job description at 2,500 characters.
-- Evaluation and the next question come from one LLM call per answer, with a capped output length.
-- Earlier answers are trimmed before they are sent as context.
-- Rate limit: 20 AI requests per minute per user.
-- TTS is free (it runs in the browser).
-
-A typical 6-question interview costs **well under $0.01**.
+- Rate limit: 20 AI requests per minute per user. TTS runs in the browser for free.
 
 ## Project structure
 
 ```
 backend/
-  prisma/            schema, migrations, seed (roles + demo account)
+  prisma/            schema, migrations, seed script
   src/
-    ai/              interviewer logic, prompts, mock (demo mode), types
-    providers/       stt.ts (Groq / Cohere / mock), llm.ts (OpenAI-compatible)
-    routes/          auth, interviews, meta (config, roles, dashboard)
+    ai/              interviewer logic, prompts, demo-mode mock, types
+    providers/       stt.ts (Groq Whisper / mock), llm.ts (Groq chat, JSON mode)
+    routes/          auth, interviews, meta (config, roles, dashboard, health)
     services/        interview flow + persistence
-    data/roles.ts    interview roles (add one here, then run the seed)
+    db/              Prisma client, idempotent seed data (roles, demo account)
+    data/roles.ts    interview roles (add one here; it is upserted on next start)
 frontend/
   src/
     pages/           Landing, Auth, Dashboard, Setup, InterviewRoom, Report, History
     features/        interview room parts, dashboard chart/list, report bars, landing preview
-    hooks/           useRecorder (mic), useSpeech (TTS), useFetch
-    components/      UI kit (button, inputs, dialog, select, ...) and layout
-    i18n/            en.ts / ar.ts dictionaries
-    lib/             api client, auth, theme, utils
+    hooks/           useRecorder (mic + voice activity), useSpeech (TTS), useFetch
+    components/      UI kit and layout
+    i18n/            en.ts / ar.ts
 ```
-
-### Adding a role
-
-Add an entry to `backend/src/data/roles.ts`, then run `npm run db:seed --prefix backend`.
 
 ## Presentation checklist
 
-1. Run `npm run setup` once, then `npm run dev`.
-2. Keep `MOCK_AI=true` as a fallback if the venue Wi-Fi is unreliable. The interview room shows a "Demo mode" badge.
-3. Log in with the demo account to show the dashboard, history and an existing report.
-4. Start a new interview (Quick, 4 questions). Show the interviewer's voice, recording, the transcript review, a follow-up question, and the final report.
-5. Switch between Arabic / English and light / dark from the header.
-
-Use Chrome or Edge for the best Arabic voices. If a browser has no voice for the interview language, questions are shown as text and the interview continues.
+1. Open the live URL in Chrome or Edge (best Arabic voices). Allow the microphone when asked.
+2. Log in with the demo account to show the dashboard, history and a finished report.
+3. Start a Quick interview. Show the voice question, recording, transcript editing, a follow-up and the report.
+4. Toggle Arabic / English and light / dark from the header.
+5. Keep the fallback command above ready.
