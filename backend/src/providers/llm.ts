@@ -1,5 +1,6 @@
 import { config } from "../config.js";
 import { HttpError } from "../middleware/errors.js";
+import { fetchWithRateLimitRetry } from "./http.js";
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -11,7 +12,7 @@ export async function chatJSON(messages: ChatMessage[], maxTokens: number): Prom
   const isReasoningModel = config.llm.model.includes("gpt-oss");
   let res: Response;
   try {
-    res = await fetch(`${config.llm.baseUrl}/chat/completions`, {
+    res = await fetchWithRateLimitRetry(`${config.llm.baseUrl}/chat/completions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.llm.apiKey}` },
       body: JSON.stringify({

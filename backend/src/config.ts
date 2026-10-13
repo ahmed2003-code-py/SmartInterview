@@ -16,7 +16,9 @@ export const config = {
   seedDemoAccount: env.SEED_DEMO_ACCOUNT === "true",
   stt: {
     groqApiKey: env.GROQ_API_KEY ?? "",
-    groqModel: env.GROQ_STT_MODEL || "whisper-large-v3-turbo",
+    // Full large-v3: noticeably more accurate than turbo on Egyptian Arabic.
+    groqModel: env.GROQ_STT_MODEL || "whisper-large-v3",
+    debug: env.STT_DEBUG === "true" || env.NODE_ENV !== "production",
   },
   llm: {
     // Groq's OpenAI-compatible endpoint; overridable for local testing only.

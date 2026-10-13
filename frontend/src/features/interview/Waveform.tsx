@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
  */
 export function Waveform({ bars = 24, levels, active, className }: { bars?: number; levels?: number[]; active?: boolean; className?: string }) {
   return (
-    <div className={cn("flex h-8 items-center gap-[3px]", className)} aria-hidden>
+    <span className={cn("flex h-8 items-center gap-[3px]", className)} aria-hidden>
       {Array.from({ length: bars }, (_, i) => {
         const level = levels ? Math.max(0.12, levels[i] ?? 0) : 0.15 + 0.85 * Math.abs(Math.sin(i * 1.7));
         return (
@@ -21,6 +21,6 @@ export function Waveform({ bars = 24, levels, active, className }: { bars?: numb
           />
         );
       })}
-    </div>
+    </span>
   );
 }

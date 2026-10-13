@@ -1,10 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
-import { AlertCircle, Keyboard, Lock, Mic, Square, Volume2 } from "lucide-react";
+import { AlertCircle, ArrowRight, Keyboard, Lock, Mic, RotateCcw, Send, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Textarea } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip } from "@/components/ui/tooltip";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
@@ -12,14 +11,14 @@ import { ErrorState } from "@/components/ui/states";
 import { LogoMark } from "@/components/layout/Logo";
 import { LanguageSwitch, ThemeToggle } from "@/components/layout/Preferences";
 import { Waveform } from "@/features/interview/Waveform";
-import { TranscriptPanel } from "@/features/interview/TranscriptPanel";
+import { AiMessage, InterviewerAvatar, StudentMessage, ThinkingMessage } from "@/features/interview/Conversation";
 import { useSpeech } from "@/hooks/useSpeech";
 import { recordingSupported, useRecorder, type Recording, type RecorderError } from "@/hooks/useRecorder";
 import { api, ApiError, type AppConfig, type InterviewDTO } from "@/lib/api";
 import { useI18n } from "@/i18n";
 import { clockTime, cn } from "@/lib/utils";
 
-export type Phase = "READY" | "AI_SPEAKING" | "WAITING_FOR_USER" | "RECORDING" | "TRANSCRIBING" | "REVIEW" | "ANALYZING" | "COMPLETED";
+export type Phase = "READY" | "AI_SPEAKING" | "WAITING_FOR_USER" | "RECORDING" | "TRANSCRIBING" | "REVIEW" | "ANALYZING" | "COMPLETED" | "DONE";
 
 interface RoomError {
   message: string;
@@ -32,6 +31,7 @@ const MIN_VOICED_SEC = 0.4;
 export default function InterviewRoom() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { d, fmt, lang: uiLang } = useI18n();
 
   const [interview, setInterview] = useState<InterviewDTO | null>(null);
@@ -43,6 +43,10 @@ export default function InterviewRoom() {
   const [inputMode, setInputMode] = useState<"voice" | "text">(recordingSupported ? "voice" : "text");
   const [slowAnalysis, setSlowAnalysis] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const [editing, setEditing] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const startingRef = useRef(false);
+  const autoStartedRef = useRef(false);
 
   // Refs keep retry callbacks from reading stale values.
   const interviewRef = useRef<InterviewDTO | null>(null);
@@ -83,7 +87,7 @@ export default function InterviewRoom() {
   }, [load]);
 
   useEffect(() => {
-    if (phase === "COMPLETED") return;
+    if (phase === "COMPLETED" || phase === "DONE") return;
     const t = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [phase]);
@@ -113,8 +117,10 @@ export default function InterviewRoom() {
     setPhase("COMPLETED");
     try {
       const { interview: done } = await api.post<{ interview: InterviewDTO }>(`/interviews/${id}/finish`);
-      if (done.status === "COMPLETED") navigate(`/interviews/${id}/report`, { replace: true });
-      else {
+      if (done.status === "COMPLETED") {
+        setInterview((prev) => (prev ? { ...prev, status: "COMPLETED" } : prev));
+        setPhase("DONE");
+      } else {
         toast(d.room.endedNoReport);
         navigate("/dashboard", { replace: true });
       }
@@ -135,6 +141,7 @@ export default function InterviewRoom() {
     const form = new FormData();
     form.append("audio", rec.blob, `answer.${rec.blob.type.includes("mp4") ? "m4a" : rec.blob.type.includes("ogg") ? "ogg" : "webm"}`);
     if (Number.isFinite(rec.voicedSec)) form.append("voicedSec", rec.voicedSec.toFixed(2));
+    form.append("durationSec", String(rec.durationSec));
     try {
       const { transcript } = await api.post<{ transcript: string }>(`/interviews/${id}/transcribe`, form);
       setDraft(transcript);
@@ -154,9 +161,11 @@ export default function InterviewRoom() {
   };
 
   async function startAnswer() {
-    if (phase !== "WAITING_FOR_USER" && phase !== "REVIEW") return;
+    if ((phase !== "WAITING_FOR_USER" && phase !== "REVIEW") || startingRef.current || recorder.recording) return;
+    startingRef.current = true;
     setError(null);
-    const err = await recorder.start();
+    setEditing(false);
+    const err = await recorder.start().finally(() => (startingRef.current = false));
     if (err) {
       setError({ message: recorderMessage[err], retry: err === "failed" ? startAnswer : undefined });
       if (err !== "failed") setInputMode("text");
@@ -188,6 +197,7 @@ export default function InterviewRoom() {
     if (busyRef.current || !text || !q || q.answer) return;
     busyRef.current = true;
     setError(null);
+    setEditing(false);
     setPhase("ANALYZING");
     try {
       const res = await api.post<{ interview: InterviewDTO; shouldEndInterview: boolean }>(`/interviews/${id}/answers`, {
@@ -227,6 +237,22 @@ export default function InterviewRoom() {
     finish();
   }
 
+  // Arriving from setup: the "Start interview" click already counts as a user gesture,
+  // so the first question can be shown and spoken right away.
+  useEffect(() => {
+    const fromSetup = (location.state as { autoStart?: boolean } | null)?.autoStart;
+    if (!interview || autoStartedRef.current || phase !== "READY" || !fromSetup || answeredCount > 0 || !currentQuestion) return;
+    autoStartedRef.current = true;
+    navigate(location.pathname, { replace: true, state: null });
+    begin();
+  });
+
+  // Keep the newest part of the conversation in view.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [interview?.questions.length, phase, editing]);
+
   // ---- render ----
   if (loadFailed)
     return (
@@ -254,302 +280,376 @@ export default function InterviewRoom() {
     );
 
   const roleName = uiLang === "ar" ? interview.role.nameAr : interview.role.nameEn;
-  const questionNumber = currentQuestion?.order ?? interview.questions.length;
+  const questionNumber = Math.min(currentQuestion?.order ?? interview.questions.length, interview.maxQuestions);
   const elapsed = Math.max(0, Math.floor((now - new Date(interview.startedAt).getTime()) / 1000));
   const maxSeconds = config?.maxAnswerSeconds ?? 120;
   const statusKey = error?.retry && phase !== "AI_SPEAKING" && phase !== "RECORDING" ? "ERROR" : phase === "ANALYZING" && slowAnalysis ? "PREPARING" : phase;
-  const isResuming = answeredCount > 0;
+  const done = phase === "DONE";
 
   return (
-    <div className="flex min-h-dvh flex-col bg-bg lg:h-dvh">
-      {/* Top bar: interview metadata only, no app navigation while interviewing */}
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-4 sm:px-6">
-        <Link to="/dashboard" aria-label={d.nav.dashboard} className="shrink-0">
-          <LogoMark />
-        </Link>
-        <span className="h-5 w-px shrink-0 bg-border" />
-        <div className="flex min-w-0 items-baseline gap-2">
-          <p className="truncate text-sm font-medium">{roleName}</p>
-          <p className="hidden truncate text-[13px] text-subtle sm:block">
-            {d.levels[interview.difficulty]} · {d.langs[interview.language]}
-          </p>
-        </div>
-        <div className="ms-auto flex items-center gap-1 sm:gap-2">
-          {interview.isMock && (
-            <Tooltip content={d.common.demoModeHint}>
-              <Badge tone="warning" className="hidden sm:inline-flex">
-                {d.common.demoMode}
-              </Badge>
-            </Tooltip>
-          )}
-          <span className="px-1 text-[13px] text-muted tabular-nums" dir="ltr" aria-label="elapsed">
-            {clockTime(elapsed)}
-          </span>
-          <div className="hidden items-center sm:flex">
-            <LanguageSwitch compact />
-            <ThemeToggle />
+    <div className="flex h-dvh flex-col bg-bg">
+      {/* Interview header */}
+      <header className="shrink-0 border-b border-border">
+        <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
+          <Link to="/dashboard" aria-label={d.nav.dashboard} className="shrink-0">
+            <LogoMark />
+          </Link>
+          <span className="h-5 w-px shrink-0 bg-border" />
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-sm font-medium">
+              <span className="truncate">{roleName}</span>
+              {!done && (
+                <span className="hidden shrink-0 items-center gap-1.5 text-xs font-normal text-success sm:flex">
+                  <span className="size-1.5 rounded-full bg-current" />
+                  {d.room.live}
+                </span>
+              )}
+            </p>
+            <p className="truncate text-xs text-subtle">
+              {d.levels[interview.difficulty]} · {d.langs[interview.language]}
+            </p>
           </div>
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button variant="danger" size="sm" disabled={phase === "COMPLETED"}>
-                {d.room.endInterview}
-              </Button>
-            </DialogTrigger>
-            <DialogContent title={d.room.endTitle} description={answeredCount ? d.room.endBody : d.room.endBodyNone}>
-              <div className="mt-6 flex justify-end gap-2">
-                <DialogClose asChild>
-                  <Button variant="secondary">{d.room.keepGoing}</Button>
-                </DialogClose>
-                <DialogClose asChild>
-                  <Button className="bg-danger text-white hover:bg-danger/90" onClick={endInterview}>
-                    {d.room.endConfirm}
+          <div className="ms-auto flex shrink-0 items-center gap-1 sm:gap-2">
+            {interview.isMock && (
+              <Tooltip content={d.common.demoModeHint}>
+                <Badge tone="warning" className="hidden md:inline-flex">
+                  {d.common.demoMode}
+                </Badge>
+              </Tooltip>
+            )}
+            <span className="hidden text-[13px] text-muted sm:inline">{fmt(d.room.questionOf, { n: questionNumber, total: interview.maxQuestions })}</span>
+            <span className="text-[13px] text-muted tabular-nums sm:hidden" dir="ltr">
+              {questionNumber}/{interview.maxQuestions}
+            </span>
+            <span className="px-1 text-[13px] text-subtle tabular-nums" dir="ltr">
+              {clockTime(elapsed)}
+            </span>
+            <div className="hidden items-center lg:flex">
+              <LanguageSwitch compact />
+              <ThemeToggle />
+            </div>
+            {!done && (
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="danger" size="sm" className="px-2 sm:px-3" disabled={phase === "COMPLETED"}>
+                    {d.room.endInterview}
                   </Button>
-                </DialogClose>
-              </div>
-            </DialogContent>
-          </Dialog>
+                </DialogTrigger>
+                <DialogContent title={d.room.endTitle} description={answeredCount ? d.room.endBody : d.room.endBodyNone}>
+                  <div className="mt-6 flex justify-end gap-2">
+                    <DialogClose asChild>
+                      <Button variant="secondary">{d.room.keepGoing}</Button>
+                    </DialogClose>
+                    <DialogClose asChild>
+                      <Button className="bg-danger text-white hover:bg-danger/90" onClick={endInterview}>
+                        {d.room.endConfirm}
+                      </Button>
+                    </DialogClose>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+          </div>
+        </div>
+        <div className="flex h-[3px] gap-px bg-border" aria-hidden>
+          {Array.from({ length: interview.maxQuestions }, (_, i) => (
+            <span key={i} className={cn("flex-1 transition-colors duration-500", i < answeredCount ? "bg-primary" : i === answeredCount && phase !== "READY" && !done ? "bg-primary/35" : "bg-surface-2")} />
+          ))}
         </div>
       </header>
 
-      {/* Progress: a hairline across the top of the stage */}
-      <div className="flex h-[3px] shrink-0 gap-px bg-border" aria-hidden>
-        {Array.from({ length: interview.maxQuestions }, (_, i) => (
-          <span key={i} className={cn("flex-1 transition-colors duration-500", i < answeredCount ? "bg-primary" : i === answeredCount && phase !== "READY" ? "bg-primary/35" : "bg-surface-2")} />
-        ))}
-      </div>
-
-      <div className="grid flex-1 lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_380px] xl:grid-cols-[minmax(0,1fr)_420px]">
-        <main className="flex flex-col lg:min-h-0 lg:overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-[44rem] flex-1 flex-col px-4 pt-7 pb-6 sm:px-8 lg:pt-14">
-            <p className="text-[13px] text-subtle tabular-nums">
-              {fmt(d.room.questionOf, { n: Math.min(questionNumber, interview.maxQuestions), total: interview.maxQuestions })}
+      {/* Conversation */}
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div className="mx-auto flex w-full max-w-[44rem] flex-col gap-7 px-4 pt-8 pb-10 sm:px-6 sm:pt-12">
+          <div className="text-center text-xs text-subtle">
+            <div className="flex items-center gap-3">
+              <span className="h-px flex-1 bg-border" />
+              {d.room.started}
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <p className="mx-auto mt-2 flex max-w-md items-start justify-center gap-1.5 text-balance">
+              <Lock className="mt-0.5 size-3 shrink-0" />
+              {d.room.privacy}
             </p>
-
-            <InterviewerPresence phase={phase} statusKey={statusKey} label={d.room.interviewer} status={d.room.states[statusKey]} recordingTime={phase === "RECORDING" ? clockTime(recorder.elapsed) : null} />
-
-            {phase === "READY" ? (
-              <div className="mt-10 animate-fade-up">
-                <h1 className="font-display text-[1.9rem] leading-tight font-medium sm:text-[2.3rem]">{isResuming ? d.room.resumeTitle : d.room.beginTitle}</h1>
-                <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-muted">{isResuming ? fmt(d.room.resumeBody, { n: questionNumber }) : d.room.beginBody}</p>
-                <ul className="mt-6 space-y-2.5 border-s border-border ps-4">
-                  {d.room.checklist.map((c) => (
-                    <li key={c} className="text-sm text-muted">
-                      {c}
-                    </li>
-                  ))}
-                </ul>
-                <Button size="lg" className="mt-8 w-full sm:w-auto" onClick={begin}>
-                  {isResuming ? d.room.resume : d.room.begin}
-                </Button>
-              </div>
-            ) : (
-              currentQuestion && (
-                <div className="mt-8 animate-fade-up" key={currentQuestion.id}>
-                  {currentQuestion.kind === "FOLLOW_UP" && <p className="mb-2 text-[13px] font-medium text-primary">{d.room.followUp}</p>}
-                  <p className="font-display text-[1.65rem] leading-[1.25] font-[450] text-pretty sm:text-[2.15rem] sm:leading-[1.2]" dir="auto" lang={interview.language}>
-                    {currentQuestion.text}
-                  </p>
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <Button variant="ghost" size="sm" className="-ms-3" onClick={repeat} disabled={phase !== "WAITING_FOR_USER" && phase !== "REVIEW"}>
-                      <Volume2 className="size-4 rtl:-scale-x-100" />
-                      {d.room.repeat}
-                    </Button>
-                    {!speech.supported && <span className="text-xs text-subtle">{d.room.noTts}</span>}
-                  </div>
-                </div>
-              )
-            )}
-
-            {phase !== "READY" && (
-              <div className="mt-10 lg:mt-14">
-                {error && (
-                  <div role="alert" className="mb-3 flex items-start gap-3 rounded-lg border border-danger/25 bg-danger-soft px-4 py-3 text-sm">
-                    <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
-                    <p className="flex-1 text-fg">{error.message}</p>
-                    {error.retry && (
-                      <button className="shrink-0 font-medium text-danger hover:underline" onClick={error.retry}>
-                        {d.common.retry}
-                      </button>
-                    )}
-                  </div>
-                )}
-                <div className={cn("rounded-xl border bg-surface p-4 transition-colors sm:p-5", phase === "RECORDING" ? "border-danger/35" : "border-border")}>
-                  <AnswerDock
-                    phase={phase}
-                    inputMode={inputMode}
-                    draft={draft}
-                    setDraft={setDraft}
-                    elapsed={recorder.elapsed}
-                    maxSeconds={maxSeconds}
-                    levels={recorder.levels}
-                    hasError={!!error}
-                    onStart={startAnswer}
-                    onStop={stopAnswer}
-                    onSubmit={submit}
-                    onToggleMode={() => {
-                      setError(null);
-                      setInputMode((m) => (m === "voice" ? "text" : "voice"));
-                    }}
-                    canUseMic={recordingSupported}
-                  />
-                </div>
-                <p className={cn("mt-3 flex items-center gap-2 text-xs", phase === "RECORDING" ? "text-danger" : "text-subtle")}>
-                  {phase === "RECORDING" ? <span className="size-1.5 rounded-full bg-danger" /> : <Lock className="size-3.5" />}
-                  {phase === "RECORDING" ? d.room.recordingNotice : d.room.privacy}
-                </p>
-              </div>
-            )}
           </div>
-        </main>
 
-        <TranscriptPanel questions={interview.questions} phase={phase} language={interview.language} pending={phase === "ANALYZING" ? draft : null} />
-      </div>
-    </div>
-  );
-}
+          {interview.questions.map((q) => {
+            const isCurrent = q.id === currentQuestion?.id && !done;
+            const showPending = isCurrent && (phase === "RECORDING" || phase === "TRANSCRIBING" || phase === "REVIEW" || (phase === "ANALYZING" && draft));
+            return (
+              <div key={q.id} className="flex flex-col gap-5">
+                <AiMessage
+                  text={q.text}
+                  lang={interview.language}
+                  followUp={q.kind === "FOLLOW_UP"}
+                  current={isCurrent}
+                  speaking={isCurrent && phase === "AI_SPEAKING"}
+                  canReplay={phase === "WAITING_FOR_USER" || phase === "REVIEW"}
+                  onReplay={repeat}
+                />
+                {q.answer ? (
+                  <StudentMessage state="final" text={q.answer.transcript} />
+                ) : (
+                  showPending && (
+                    <StudentMessage
+                      state={phase === "RECORDING" ? "recording" : phase === "TRANSCRIBING" ? "transcribing" : phase === "ANALYZING" ? "sending" : "review"}
+                      text={draft}
+                      recordingTime={clockTime(recorder.elapsed)}
+                      editing={editing}
+                      onEdit={() => setEditing(true)}
+                      onDoneEditing={() => setEditing(false)}
+                      onChange={setDraft}
+                    />
+                  )
+                )}
+              </div>
+            );
+          })}
 
-/** The interviewer's presence + a status line whose look differs per state. */
-function InterviewerPresence({ phase, statusKey, label, status, recordingTime }: { phase: Phase; statusKey: string; label: string; status: string; recordingTime: string | null }) {
-  const speaking = phase === "AI_SPEAKING";
-  const busy = phase === "TRANSCRIBING" || phase === "ANALYZING" || phase === "COMPLETED";
-  const tone =
-    statusKey === "ERROR" ? "text-danger" : phase === "RECORDING" ? "text-danger" : speaking ? "text-primary" : phase === "WAITING_FOR_USER" || phase === "REVIEW" ? "text-success" : "text-muted";
-
-  return (
-    <div className="mt-5 flex items-center gap-3.5">
-      <div className="relative shrink-0">
-        {speaking && <span className="absolute -inset-1 rounded-full border-2 border-primary/50 animate-pulse-ring" />}
-        <div className={cn("grid size-11 place-items-center rounded-full bg-ink text-ink-fg transition-transform duration-300", speaking && "scale-105")}>
-          <Waveform bars={3} active={speaking} className="h-4 gap-[3px] [&>span]:w-[2.5px]" />
+          {phase === "ANALYZING" && <ThinkingMessage />}
+          {(phase === "COMPLETED" || done) && (
+            <div className="flex animate-fade-up gap-3 sm:gap-4">
+              <InterviewerAvatar className="mt-0.5" />
+              <div>
+                <p className="text-[13px] font-medium">{d.room.interviewer}</p>
+                {done ? (
+                  <p className="mt-1.5 font-display text-[1.4rem] leading-snug font-[450] sm:text-[1.6rem]">{d.room.closing}</p>
+                ) : (
+                  <p className="mt-2 flex items-center gap-2 text-sm text-muted">
+                    <Spinner className="size-3.5" />
+                    {d.room.states.COMPLETED}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-      <div className="min-w-0">
-        <p className="text-sm font-medium">{label}</p>
-        <p className={cn("mt-0.5 flex items-center gap-2 text-[13px] font-medium", tone)} aria-live="polite">
-          {busy ? (
-            <Spinner className="size-3.5" />
-          ) : speaking ? (
-            <Waveform bars={4} active className="h-3 gap-[2px] [&>span]:w-[2px]" />
-          ) : (
-            <span className={cn("size-2 rounded-full bg-current", phase === "RECORDING" && "animate-pulse")} />
+
+      {/* Voice dock */}
+      <footer className="shrink-0 border-t border-border bg-bg pb-[env(safe-area-inset-bottom)]">
+        <div className="mx-auto w-full max-w-[44rem] px-4 py-3 sm:px-6 sm:py-4">
+          {error && (
+            <div role="alert" className="mb-3 flex items-start gap-2.5 rounded-md bg-danger-soft px-3 py-2.5 text-sm">
+              <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
+              <p className="flex-1">{error.message}</p>
+              {error.retry && (
+                <button className="shrink-0 font-medium text-danger hover:underline" onClick={error.retry}>
+                  {d.common.retry}
+                </button>
+              )}
+            </div>
           )}
-          {status}
-          {recordingTime && <span className="font-normal tabular-nums opacity-80">{recordingTime}</span>}
-        </p>
-      </div>
+          <VoiceDock
+            phase={phase}
+            statusKey={statusKey}
+            status={d.room.states[statusKey as keyof typeof d.room.states]}
+            inputMode={inputMode}
+            canUseMic={recordingSupported}
+            draft={draft}
+            setDraft={setDraft}
+            elapsed={recorder.elapsed}
+            maxSeconds={maxSeconds}
+            levels={recorder.levels}
+            isResuming={answeredCount > 0}
+            resumeText={fmt(d.room.resumeBody, { n: questionNumber })}
+            reportHref={`/interviews/${interview.id}/report`}
+            noTts={!speech.supported}
+            onBegin={begin}
+            onStart={startAnswer}
+            onStop={stopAnswer}
+            onSubmit={submit}
+            onToggleMode={() => {
+              setError(null);
+              setInputMode((m) => (m === "voice" ? "text" : "voice"));
+            }}
+          />
+        </div>
+      </footer>
     </div>
   );
 }
 
-function AnswerDock(props: {
+/** Bottom bar: the current voice state on one side, the one relevant action on the other. */
+function VoiceDock(props: {
   phase: Phase;
+  statusKey: string;
+  status: string;
   inputMode: "voice" | "text";
+  canUseMic: boolean;
   draft: string;
   setDraft: (v: string) => void;
   elapsed: number;
   maxSeconds: number;
   levels: number[];
-  hasError: boolean;
-  canUseMic: boolean;
+  isResuming: boolean;
+  resumeText: string;
+  reportHref: string;
+  noTts: boolean;
+  onBegin: () => void;
   onStart: () => void;
   onStop: () => void;
   onSubmit: () => void;
   onToggleMode: () => void;
 }) {
   const { d, fmt } = useI18n();
-  const { phase, inputMode } = props;
+  const { phase } = props;
+  const busy = phase === "TRANSCRIBING" || phase === "ANALYZING" || phase === "COMPLETED";
+  const tone =
+    props.statusKey === "ERROR" || phase === "RECORDING" ? "text-danger" : phase === "AI_SPEAKING" ? "text-primary" : phase === "WAITING_FOR_USER" || phase === "REVIEW" || phase === "DONE" ? "text-success" : "text-muted";
+
+  const status = (
+    <div className="min-w-0 flex-1">
+      <p className={cn("flex items-center gap-2 text-sm font-medium", tone)} aria-live="polite">
+        {busy ? (
+          <Spinner className="size-3.5" />
+        ) : phase === "AI_SPEAKING" ? (
+          <Waveform bars={4} active className="h-3.5 gap-[2px] [&>span]:w-[2px]" />
+        ) : (
+          <span className={cn("size-2 shrink-0 rounded-full bg-current", phase === "RECORDING" && "animate-pulse")} />
+        )}
+        <span className="truncate">{phase === "READY" ? (props.isResuming ? d.room.resumeTitle : d.room.beginTitle) : props.status}</span>
+      </p>
+      <p className="mt-0.5 truncate text-xs text-subtle">
+        {phase === "READY"
+          ? props.isResuming
+            ? props.resumeText
+            : d.room.checklist[0]
+          : phase === "RECORDING"
+            ? fmt(d.room.timeLeft, { t: clockTime(Math.max(0, props.maxSeconds - props.elapsed)) })
+            : phase === "WAITING_FOR_USER"
+              ? props.noTts
+                ? d.room.noTts
+                : d.room.checklist[1]
+              : phase === "REVIEW"
+                ? d.room.transcriptHint
+                : busy
+                  ? d.room.analyzingHint
+                  : " "}
+      </p>
+    </div>
+  );
+
+  if (phase === "READY") {
+    return (
+      <div className="flex items-center gap-4">
+        {status}
+        <Button size="lg" onClick={props.onBegin}>
+          {props.isResuming ? d.room.resume : d.room.begin}
+        </Button>
+      </div>
+    );
+  }
+
+  if (phase === "DONE") {
+    return (
+      <div className="flex items-center gap-4">
+        {status}
+        <Button asChild size="lg">
+          <Link to={props.reportHref}>
+            {d.room.viewReport}
+            <ArrowRight className="size-4 rtl:-scale-x-100" />
+          </Link>
+        </Button>
+      </div>
+    );
+  }
 
   if (phase === "RECORDING") {
-    const left = Math.max(0, props.maxSeconds - props.elapsed);
     return (
-      <div className="flex items-center gap-4">
-        <button onClick={props.onStop} className="relative grid size-14 shrink-0 place-items-center rounded-full bg-danger text-white outline-none transition-transform focus-visible:ring-4 focus-visible:ring-danger/30 active:scale-95" aria-label={d.room.stopAnswer}>
-          <span className="absolute inset-0 rounded-full bg-danger/35 animate-pulse-ring" />
-          <Square className="relative size-[18px] fill-current" />
-        </button>
-        <div className="min-w-0 flex-1">
-          <Waveform levels={props.levels} bars={props.levels.length} className="h-9 w-full justify-between overflow-hidden text-danger/75" />
-        </div>
-        <div className="shrink-0 text-end">
-          <p className="font-medium tabular-nums" dir="ltr">
-            {clockTime(props.elapsed)}
+      <div className="flex items-center gap-3 sm:gap-4">
+        <div className="shrink-0">
+          <p className="flex items-center gap-2 text-sm font-medium text-danger">
+            <span className="size-2 animate-pulse rounded-full bg-current" />
+            <span className="tabular-nums" dir="ltr">
+              {clockTime(props.elapsed)}
+            </span>
           </p>
-          <p className={cn("text-xs tabular-nums", left <= 15 ? "text-danger" : "text-subtle")}>{fmt(d.room.timeLeft, { t: clockTime(left) })}</p>
+          <p className="mt-0.5 text-xs text-subtle tabular-nums">{fmt(d.room.timeLeft, { t: clockTime(Math.max(0, props.maxSeconds - props.elapsed)) })}</p>
         </div>
+        <Waveform levels={props.levels} bars={props.levels.length} className="h-8 min-w-0 flex-1 justify-between overflow-hidden text-danger/70" />
+        <button
+          onClick={props.onStop}
+          className="relative inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-danger px-5 text-sm font-medium text-white outline-none transition-transform focus-visible:ring-4 focus-visible:ring-danger/30 active:scale-95"
+        >
+          <span className="absolute inset-0 rounded-full bg-danger/30 animate-pulse-ring" />
+          <Square className="relative size-3.5 fill-current" />
+          <span className="relative">{d.room.stopAnswer2}</span>
+        </button>
       </div>
     );
   }
 
-  if (phase === "TRANSCRIBING" || phase === "ANALYZING" || phase === "COMPLETED" || phase === "AI_SPEAKING") {
-    const label = phase === "AI_SPEAKING" ? d.room.states.AI_SPEAKING : phase === "TRANSCRIBING" ? d.room.states.TRANSCRIBING : phase === "ANALYZING" ? d.room.states.ANALYZING : d.room.states.COMPLETED;
+  if (phase === "REVIEW") {
     return (
-      <div className="flex items-center gap-4">
-        <span className="grid size-14 shrink-0 place-items-center rounded-full border border-border text-subtle">
-          {phase === "AI_SPEAKING" ? <Mic className="size-5" /> : <Spinner className="text-primary" />}
-        </span>
-        <div>
-          <p className="font-medium text-muted">{label}</p>
-          {phase !== "AI_SPEAKING" && <p className="text-sm text-subtle">{d.room.analyzingHint}</p>}
-        </div>
+      <div className="flex items-center gap-3 sm:gap-4">
+        {status}
+        {props.canUseMic && props.inputMode === "voice" && (
+          <Button variant="ghost" size="lg" className="px-3" onClick={props.onStart} aria-label={d.room.rerecord}>
+            <RotateCcw className="size-4" />
+            <span className="hidden sm:inline">{d.room.rerecord}</span>
+          </Button>
+        )}
+        <Button size="lg" onClick={props.onSubmit} disabled={!props.draft.trim()}>
+          <Send className="size-4 rtl:-scale-x-100" />
+          {d.room.send}
+        </Button>
       </div>
     );
   }
 
-  const showEditor = phase === "REVIEW" || inputMode === "text";
-  if (showEditor) {
+  // Typed answers: fallback when the microphone is unavailable or the student prefers typing.
+  if (phase === "WAITING_FOR_USER" && props.inputMode === "text") {
     return (
       <div>
-        <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-          <label htmlFor="answer" className="text-sm font-medium">
-            {d.room.transcriptLabel}
-          </label>
-          {phase === "REVIEW" && <span className="text-xs text-subtle">{d.room.transcriptHint}</span>}
-        </div>
-        <Textarea
-          id="answer"
-          dir="auto"
-          value={props.draft}
-          maxLength={4000}
-          onChange={(e) => props.setDraft(e.target.value)}
-          placeholder={d.room.typePlaceholder}
-          className="min-h-32 text-[15px]"
-          autoFocus={inputMode === "text"}
-        />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          {props.canUseMic ? (
-            <Button variant="ghost" size="sm" className="-ms-3" onClick={phase === "REVIEW" && inputMode === "voice" ? props.onStart : props.onToggleMode}>
-              <Mic className="size-4" />
-              {phase === "REVIEW" && inputMode === "voice" ? d.room.rerecord : d.room.useMic}
-            </Button>
-          ) : (
-            <span />
-          )}
-          <Button onClick={props.onSubmit} disabled={!props.draft.trim()}>
-            {d.room.submit}
+        <div className="flex items-end gap-2 rounded-lg border border-border-strong/80 bg-surface p-2 focus-within:border-primary">
+          <textarea
+            value={props.draft}
+            onChange={(e) => props.setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) props.onSubmit();
+            }}
+            placeholder={d.room.typePlaceholder}
+            dir="auto"
+            rows={2}
+            maxLength={4000}
+            autoFocus
+            className="max-h-40 min-h-12 flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] leading-relaxed outline-none"
+            aria-label={d.room.transcriptLabel}
+          />
+          <Button onClick={props.onSubmit} disabled={!props.draft.trim()} aria-label={d.room.send}>
+            <Send className="size-4 rtl:-scale-x-100" />
+            <span className="hidden sm:inline">{d.room.send}</span>
           </Button>
         </div>
+        {props.canUseMic && (
+          <button onClick={props.onToggleMode} className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted hover:text-fg">
+            <Mic className="size-3.5" />
+            {d.room.useMic}
+          </button>
+        )}
       </div>
     );
   }
 
-  // WAITING_FOR_USER, voice mode
+  // Your turn / interviewer speaking / transcribing / thinking: one mic action, enabled only on your turn.
+  const yourTurn = phase === "WAITING_FOR_USER";
   return (
-    <div className="flex flex-col items-center gap-4 sm:flex-row">
+    <div className="flex items-center gap-3 sm:gap-4">
+      {status}
+      {yourTurn && (
+        <Button variant="ghost" size="icon" className="size-11 shrink-0" onClick={props.onToggleMode} aria-label={d.room.typeInstead}>
+          <Keyboard className="size-[18px]" />
+        </Button>
+      )}
       <button
         onClick={props.onStart}
-        className="grid size-14 shrink-0 place-items-center rounded-full bg-primary text-primary-fg outline-none transition hover:bg-primary-hover focus-visible:ring-4 focus-visible:ring-primary/30 active:scale-95"
-        aria-label={d.room.startAnswer}
+        disabled={!yourTurn}
+        className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-primary px-5 text-sm font-medium text-primary-fg outline-none transition hover:bg-primary-hover focus-visible:ring-4 focus-visible:ring-primary/30 active:scale-95 disabled:pointer-events-none disabled:bg-surface-2 disabled:text-subtle"
       >
-        <Mic className="size-[22px]" />
+        <Mic className="size-[18px]" />
+        {d.room.startAnswer}
       </button>
-      <div className="text-center sm:text-start">
-        <p className="font-medium">{d.room.startAnswer}</p>
-        <p className="text-sm text-subtle">{d.room.checklist[1]}</p>
-      </div>
-      <Button variant="ghost" size="sm" className="sm:ms-auto" onClick={props.onToggleMode}>
-        <Keyboard className="size-4" />
-        {d.room.typeInstead}
-      </Button>
     </div>
   );
 }

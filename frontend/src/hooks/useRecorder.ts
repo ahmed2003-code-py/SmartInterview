@@ -58,9 +58,10 @@ export function useRecorder(maxSeconds: number) {
   const stop = useCallback(() => {
     return new Promise<Recording | null>((resolve) => {
       const rec = mediaRef.current;
-      if (!rec || rec.state !== "recording") return resolve(null);
+      if (!rec || rec.state !== "recording" || stopResolveRef.current) return resolve(null);
       stopResolveRef.current = resolve;
-      rec.stop();
+      // A short tail so the last syllable (often spoken while clicking Stop) is kept.
+      window.setTimeout(() => rec.state === "recording" && rec.stop(), 350);
     });
   }, []);
 
@@ -68,7 +69,8 @@ export function useRecorder(maxSeconds: number) {
     if (!recordingSupported) return "unsupported";
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      // Browser noise suppression can smear consonants, which hurts Arabic recognition; Whisper copes with room noise itself.
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: false, autoGainControl: true } });
     } catch (err) {
       const name = (err as DOMException)?.name;
       if (name === "NotAllowedError" || name === "SecurityError") return "denied";
@@ -81,7 +83,7 @@ export function useRecorder(maxSeconds: number) {
     voicedRef.current = 0;
 
     const mimeType = MIME_TYPES.find((t) => MediaRecorder.isTypeSupported(t));
-    const rec = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 32_000 } : undefined);
+    const rec = new MediaRecorder(stream, mimeType ? { mimeType, audioBitsPerSecond: 64_000 } : { audioBitsPerSecond: 64_000 });
     mediaRef.current = rec;
     rec.ondataavailable = (e) => e.data.size && chunksRef.current.push(e.data);
     rec.onstop = () => {
@@ -126,6 +128,13 @@ export function useRecorder(maxSeconds: number) {
       voicedRef.current = Infinity;
     }
 
+    // Only report "recording" once the recorder has really started, so the first words aren't lost.
+    const started = new Promise<void>((resolve) => {
+      rec.onstart = () => resolve();
+      window.setTimeout(resolve, 1500);
+    });
+    rec.start(1000);
+    await started;
     startRef.current = performance.now();
     setElapsed(0);
     timerRef.current = window.setInterval(() => {
@@ -133,7 +142,6 @@ export function useRecorder(maxSeconds: number) {
       setElapsed(s);
       if (s >= maxSeconds) autoStopRef.current?.();
     }, 250);
-    rec.start(1000);
     setRecording(true);
     return null;
   }, [cleanup, maxSeconds]);

@@ -24,13 +24,20 @@ function pickVoice(voices: SpeechSynthesisVoice[], lang: "en" | "ar") {
 export function useSpeech(lang: "en" | "ar") {
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>(() => (supported ? speechSynthesis.getVoices() : []));
   const resolveRef = useRef<(() => void) | null>(null);
+  // Set when the engine fails outright (e.g. no voices installed); questions are then text-only.
+  const [broken, setBroken] = useState(false);
+  // False after the page using this hook unmounts, so late async work (e.g. an answer that finishes
+  // after the student left the room) can never start speaking.
+  const aliveRef = useRef(true);
 
   useEffect(() => {
     if (!supported) return;
+    aliveRef.current = true;
     const load = () => setVoices(speechSynthesis.getVoices());
     load();
     speechSynthesis.addEventListener("voiceschanged", load);
     return () => {
+      aliveRef.current = false;
       speechSynthesis.removeEventListener("voiceschanged", load);
       speechSynthesis.cancel();
     };
@@ -38,7 +45,7 @@ export function useSpeech(lang: "en" | "ar") {
 
   const voice = pickVoice(voices, lang);
   // Speaking Arabic text with an English voice sounds broken, so only speak if a matching voice exists.
-  const available = supported && (voice !== null || voices.length === 0);
+  const available = supported && !broken && (voice !== null || voices.length === 0);
 
   const cancel = useCallback(() => {
     if (supported) speechSynthesis.cancel();
@@ -49,7 +56,7 @@ export function useSpeech(lang: "en" | "ar") {
   const speak = useCallback(
     (text: string) =>
       new Promise<void>((resolve) => {
-        if (!available) return resolve();
+        if (!available || !aliveRef.current) return resolve();
         speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = voice?.lang ?? (lang === "ar" ? "ar-EG" : "en-US");
@@ -66,7 +73,10 @@ export function useSpeech(lang: "en" | "ar") {
         };
         resolveRef.current = done;
         u.onend = done;
-        u.onerror = done;
+        u.onerror = (e) => {
+          if (e.error !== "interrupted" && e.error !== "canceled" && e.error !== "not-allowed") setBroken(true);
+          done();
+        };
         // Chrome silently stops long utterances after ~15s unless nudged.
         keepAlive = window.setInterval(() => {
           if (speechSynthesis.speaking && !speechSynthesis.paused) {

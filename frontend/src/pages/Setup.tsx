@@ -98,7 +98,7 @@ export default function Setup() {
     setBusy(true);
     try {
       const { interview } = await api.post<{ interview: InterviewDTO }>("/interviews", { roleId, language, difficulty, length, jobDescription: jd.trim() || null });
-      navigate(`/interviews/${interview.id}`);
+      navigate(`/interviews/${interview.id}`, { state: { autoStart: true } });
     } catch (err) {
       const msg = err instanceof ApiError && err.code === "NETWORK_ERROR" ? d.room.errors.network : err instanceof ApiError && err.code === "AI_FAILED" ? d.room.errors.aiFailed : d.room.errors.generic;
       toast.error(msg, { action: { label: d.common.retry, onClick: start } });

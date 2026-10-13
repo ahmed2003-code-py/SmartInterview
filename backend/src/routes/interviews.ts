@@ -80,7 +80,12 @@ interviewsRouter.post("/:id/transcribe", aiLimiter, upload.single("audio"), asyn
   // The browser measures how long the student actually spoke; skip paid STT for silent clips.
   const voicedSec = Number(req.body?.voicedSec);
   if (Number.isFinite(voicedSec) && voicedSec < 0.3) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
-  const text = await getSTT().transcribe(req.file.buffer, req.file.mimetype, interview.language as Lang, interview.questions[0]?.text);
+  const durationSec = Number(req.body?.durationSec);
+  const text = await getSTT().transcribe(req.file.buffer, req.file.mimetype, interview.language as Lang, {
+    roleSlug: interview.role.slug,
+    question: interview.questions[0]?.text,
+    durationSec: Number.isFinite(durationSec) ? durationSec : undefined,
+  });
   if (!text) throw new HttpError(422, "NO_SPEECH", "We couldn't hear any speech");
   res.json({ transcript: text.slice(0, config.limits.maxAnswerChars) });
 });

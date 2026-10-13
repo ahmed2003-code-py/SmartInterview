@@ -114,7 +114,7 @@ export async function getInterview(userId: string, id: string) {
 export async function assertActive(userId: string, id: string) {
   const interview = await prisma.interview.findFirst({
     where: { id, userId },
-    select: { status: true, language: true, questions: { orderBy: { order: "desc" }, take: 1, select: { text: true } } },
+    select: { status: true, language: true, role: { select: { slug: true } }, questions: { orderBy: { order: "desc" }, take: 1, select: { text: true } } },
   });
   if (!interview) throw new HttpError(404, "NOT_FOUND", "Interview not found");
   if (interview.status !== "IN_PROGRESS") throw new HttpError(409, "INTERVIEW_CLOSED", "This interview has already ended");

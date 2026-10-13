@@ -21,7 +21,7 @@ Graduation project. Live at **https://smartinterview-production.up.railway.app**
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS v4, Radix primitives |
 | Backend | Node.js 22, Express 5, TypeScript, Zod |
 | Database | PostgreSQL + Prisma |
-| Speech-to-text | Groq `whisper-large-v3-turbo` |
+| Speech-to-text | Groq `whisper-large-v3` (explicit language, Egyptian-Arabic context prompt) |
 | LLM | Groq `openai/gpt-oss-120b` (JSON output, validated server-side) |
 | Text-to-speech | Browser `speechSynthesis` (free) |
 | Hosting | Railway: one app service + Railway PostgreSQL |
@@ -38,9 +38,9 @@ Browser ──► Railway service "smartinterview" (one Node process)
 How one answer is handled:
 
 1. The browser records the answer. It measures how long the student actually spoke and doesn't upload silent clips.
-2. The backend sends the audio to Groq Whisper (`verbose_json`). The audio stays in memory and is discarded afterwards.
-3. Silence hallucinations ("Thank you for watching", subtitle credits, echoes of the prompt, empty punctuation) are rejected as "no speech".
-4. The student reviews or edits the transcript and submits it.
+2. The backend sends the audio to Groq Whisper `whisper-large-v3` with the interview language set explicitly, `temperature: 0`, `verbose_json`, and a short vocabulary prompt written in Egyptian Arabic, because a formal-Arabic prompt made Whisper rewrite dialect into formal Arabic. The audio stays in memory and is discarded afterwards. `backend/scripts/stt-compare.ts` is a developer-only tool that compares models on the same recordings.
+3. Silence hallucinations are rejected as "no speech": known phrases, subtitle credits, echoes of the prompt, empty punctuation and very low-confidence segments. Nothing is paraphrased or "corrected" by an LLM.
+4. The answer appears in the conversation as the student's message. They can fix a misheard word inline (Edit), then send it with one click.
 5. **One LLM call** scores the answer on five criteria (1–10), writes feedback and a stronger sample answer, decides `FOLLOW_UP` / `NEXT_TOPIC` / `FINISH`, and writes the next question.
 6. The server validates the JSON (one retry if it is malformed), clamps scores, enforces the question limit and a minimum of 75% of questions before finishing, and never allows two follow-ups in a row.
 7. At the end the server computes every score itself. The LLM only writes the report text, so the numbers stay consistent.
@@ -80,7 +80,8 @@ GROQ_API_KEY=gsk_...
 | `NODE_ENV` | | `production` on Railway (secure cookies) |
 | `PORT` | | Set automatically by Railway |
 | `SEED_DEMO_ACCOUNT` | | `true` creates the demo account on startup if missing |
-| `GROQ_STT_MODEL` / `LLM_MODEL` | | Defaults: `whisper-large-v3-turbo` / `openai/gpt-oss-120b` |
+| `GROQ_STT_MODEL` / `LLM_MODEL` | | Defaults: `whisper-large-v3` / `openai/gpt-oss-120b` |
+| `STT_DEBUG` | | `true` logs safe STT metadata (size, duration, language, model) in production |
 
 ## Railway deployment
 
@@ -123,7 +124,7 @@ If there is no internet at all, run it locally: `npm run dev` with `MOCK_AI=true
 
 ## Cost control
 
-- Audio goes only to Whisper (about $0.04 per hour of audio) and is never stored. Silent clips are not uploaded.
+- Audio goes only to Whisper (large-v3, about $0.11 per hour of audio) and is never stored. Silent clips are not uploaded.
 - One LLM call per answer, with capped output. Earlier answers are trimmed in the context.
 - Answers are capped at 2 minutes and 4,000 characters, and the job description at 2,500 characters.
 - Rate limit: 20 AI requests per minute per user. TTS runs in the browser for free.
