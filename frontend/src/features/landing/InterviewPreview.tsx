@@ -3,63 +3,77 @@ import { useI18n } from "@/i18n";
 import { LogoMark } from "@/components/layout/Logo";
 import { Waveform } from "@/features/interview/Waveform";
 
-/** Static, non-interactive mock of the interview room for the landing hero. */
+/** Static, non-interactive replica of the interview room used as the landing hero image. */
 export function InterviewPreview() {
   const { d, fmt } = useI18n();
   return (
-    <div className="relative overflow-hidden rounded-xl border border-border bg-surface shadow-md" aria-hidden>
-      <div className="flex items-center justify-between gap-4 border-b border-border px-4 py-3">
+    <div className="overflow-hidden rounded-xl border border-border-strong/70 bg-bg shadow-md select-none" aria-hidden>
+      {/* header */}
+      <div className="flex h-11 items-center gap-3 border-b border-border px-4">
+        <LogoMark className="size-5" />
+        <span className="h-4 w-px bg-border" />
         <span className="truncate text-[13px] font-medium">{d.landing.previewRole}</span>
-        <div className="flex shrink-0 items-center gap-3 text-[13px] text-muted">
-          <span>{fmt(d.room.questionOf, { n: 3, total: 6 })}</span>
-          <span className="tabular-nums" dir="ltr">
-            04:12
-          </span>
-        </div>
+        <span className="ms-auto text-xs text-muted tabular-nums" dir="ltr">
+          04:12
+        </span>
+        <span className="hidden text-xs font-medium text-danger sm:inline">{d.room.endInterview}</span>
       </div>
-      <div className="flex gap-1 px-4 pt-3">
+      <div className="flex h-[3px] gap-px bg-border">
         {Array.from({ length: 6 }, (_, i) => (
-          <span key={i} className={`h-1 flex-1 rounded-full ${i < 2 ? "bg-primary" : i === 2 ? "bg-primary/45" : "bg-surface-2"}`} />
+          <span key={i} className={`flex-1 ${i < 2 ? "bg-primary" : i === 2 ? "bg-primary/35" : "bg-surface-2"}`} />
         ))}
       </div>
 
-      <div className="grid gap-3 p-3 sm:grid-cols-[1.35fr_1fr] sm:p-4">
-        {/* Stage */}
-        <div className="flex flex-col items-center rounded-lg bg-navy px-5 pt-8 pb-5 text-center text-white">
-          <div className="flex flex-1 flex-col items-center justify-center">
-          <div className="relative">
-            <span className="absolute inset-0 rounded-full bg-[#5866f2]/40 animate-pulse-ring" />
-            <div className="relative grid size-16 place-items-center rounded-full bg-[#1a2350] ring-1 ring-white/10">
-              <LogoMark className="size-8" />
+      <div className="grid sm:grid-cols-[minmax(0,1fr)_minmax(0,0.62fr)]">
+        {/* stage */}
+        <div className="px-5 pt-6 pb-5 sm:px-8 sm:pt-9">
+          <p className="text-xs text-subtle">{fmt(d.room.questionOf, { n: 3, total: 6 })}</p>
+          <div className="mt-4 flex items-center gap-3">
+            <div className="grid size-9 place-items-center rounded-full bg-ink text-ink-fg">
+              <Waveform bars={3} className="h-3.5 gap-[3px] [&>span]:w-[2px]" />
+            </div>
+            <div>
+              <p className="text-[13px] font-medium">{d.room.interviewer}</p>
+              <p className="flex items-center gap-1.5 text-xs font-medium text-danger">
+                <span className="size-1.5 rounded-full bg-current" />
+                {d.room.states.RECORDING}
+                <span className="font-normal tabular-nums opacity-80">0:24</span>
+              </p>
             </div>
           </div>
-          <p className="mt-3 text-xs text-white/60">{d.room.interviewer}</p>
-          <p className="mt-4 text-[15px] leading-snug font-medium text-balance">{d.landing.previewFollowUp}</p>
-          </div>
-          <div className="mt-6 flex w-full items-center gap-3 rounded-lg bg-white/[0.06] p-2 ps-3">
-            <span className="size-2 shrink-0 rounded-full bg-[#f2706a]" />
-            <span className="text-xs whitespace-nowrap text-white/75">{d.landing.previewStatus}</span>
-            <Waveform className="mx-auto h-5 min-w-0 overflow-hidden text-white/70" bars={18} active />
-            <span className="grid size-8 shrink-0 place-items-center rounded-md bg-[#f2706a] text-white">
-              <Square className="size-3 fill-current" />
+          <p className="mt-6 text-xs font-medium text-primary">{d.room.followUp}</p>
+          <p className="mt-1.5 font-display text-[1.3rem] leading-snug font-[450] text-pretty sm:text-[1.55rem]">{d.landing.previewFollowUp}</p>
+
+          <div className="mt-8 flex items-center gap-3 rounded-lg border border-danger/35 bg-surface p-3">
+            <span className="relative grid size-10 shrink-0 place-items-center rounded-full bg-danger text-white">
+              <span className="absolute inset-0 rounded-full bg-danger/35 animate-pulse-ring" />
+              <Square className="relative size-3.5 fill-current" />
+            </span>
+            <Waveform bars={34} active className="h-7 min-w-0 flex-1 justify-between overflow-hidden text-danger/70" />
+            <span className="shrink-0 text-[13px] font-medium tabular-nums" dir="ltr">
+              0:24
             </span>
           </div>
         </div>
 
-        {/* Transcript */}
-        <div className="hidden flex-col gap-3 rounded-lg border border-border p-3 text-[13px] sm:flex">
-          <p className="text-xs font-medium text-subtle">{d.landing.previewTranscript}</p>
-          <div>
-            <p className="mb-0.5 text-xs font-medium text-primary">{d.room.interviewer}</p>
-            <p className="leading-snug text-muted">{d.landing.previewQuestion}</p>
-          </div>
-          <div className="rounded-md bg-surface-2 p-2.5">
-            <p className="mb-0.5 text-xs font-medium">{d.room.you}</p>
-            <p className="leading-snug text-muted">{d.landing.previewAnswer}</p>
-          </div>
-          <div>
-            <p className="mb-0.5 text-xs font-medium text-primary">{d.room.interviewer}</p>
-            <p className="leading-snug text-muted">{d.landing.previewFollowUp}</p>
+        {/* transcript */}
+        <div className="hidden border-s border-border bg-surface sm:block">
+          <div className="flex h-10 items-center border-b border-border px-4 text-xs font-medium">{d.landing.previewTranscript}</div>
+          <div className="space-y-4 p-4 text-[13px] leading-relaxed">
+            <div>
+              <p className="mb-1 text-[11px] text-subtle">2. {d.room.interviewer}</p>
+              <p>{d.landing.previewQuestion}</p>
+              <div className="mt-2 border-s-2 border-border-strong ps-2.5">
+                <p className="mb-0.5 text-[11px] text-subtle">{d.room.you}</p>
+                <p className="text-muted">{d.landing.previewAnswer}</p>
+              </div>
+            </div>
+            <div>
+              <p className="mb-1 text-[11px] text-subtle">
+                3. {d.room.interviewer} <span className="text-primary">· {d.room.followUp}</span>
+              </p>
+              <p>{d.landing.previewFollowUp}</p>
+            </div>
           </div>
         </div>
       </div>

@@ -8,7 +8,7 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
     <T.Root delayDuration={300}>
       <T.Trigger asChild>{children}</T.Trigger>
       <T.Portal>
-        <T.Content sideOffset={6} className="z-50 max-w-60 rounded-md bg-[#0b1226] px-2.5 py-1.5 text-xs text-white shadow-md dark:bg-[#e8ecf5] dark:text-[#0b1226] animate-fade-up">
+        <T.Content sideOffset={6} className="z-50 max-w-60 rounded-md bg-ink px-2.5 py-1.5 text-xs text-ink-fg shadow-md animate-fade-up">
           {content}
         </T.Content>
       </T.Portal>

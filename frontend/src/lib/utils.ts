@@ -18,9 +18,9 @@ export function scoreBand(score: number): ScoreBand {
   return "needsWork";
 }
 
-/** Text color class for a 0-100 score. */
+/** Text color class for a 0-100 score: neutral when fine, colored only when it needs attention. */
 export function scoreTone(score: number) {
-  if (score >= 70) return "text-success";
+  if (score >= 70) return "text-fg";
   if (score >= 50) return "text-warning";
   return "text-danger";
 }

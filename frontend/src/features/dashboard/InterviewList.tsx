@@ -18,7 +18,7 @@ export function InterviewList({ items, showHeader, compact }: { items: Interview
   return (
     <div>
       {showHeader && (
-        <div className={cn("hidden border-b border-border px-4 pb-2.5 text-xs font-medium text-subtle", cols)}>
+        <div className={cn("hidden border-b border-border px-3 pb-2.5 text-xs text-subtle", cols)}>
           <span>{d.history.role}</span>
           <span>{d.history.date}</span>
           <span>{d.history.language}</span>
@@ -28,10 +28,10 @@ export function InterviewList({ items, showHeader, compact }: { items: Interview
           <span />
         </div>
       )}
-      <ul className="divide-y divide-border">
+      <ul className={cn("divide-y divide-border border-b border-border", !showHeader && "border-t")}>
         {items.map((i) => (
           <li key={i.id}>
-            <Link to={interviewHref(i)} className={cn("group flex items-center gap-4 px-4 py-3.5 transition-colors hover:bg-bg-subtle", cols)}>
+            <Link to={interviewHref(i)} className={cn("group -mx-px flex items-center gap-4 px-3 py-4 transition-colors hover:bg-surface", cols)}>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-medium">{lang === "ar" ? i.role.nameAr : i.role.nameEn}</p>
                 <p className={cn("mt-0.5 truncate text-[13px] text-muted", !compact && "md:hidden")}>
@@ -45,7 +45,7 @@ export function InterviewList({ items, showHeader, compact }: { items: Interview
               <span className={cn(wide, "text-sm text-muted")}>{formatDuration(i.durationSec)}</span>
               <span className="shrink-0 text-end">
                 {i.status === "COMPLETED" && i.overallScore != null ? (
-                  <span className={cn("text-lg font-semibold tabular-nums", scoreTone(i.overallScore))}>{i.overallScore}</span>
+                  <span className={cn("font-display text-[1.4rem] leading-none font-[450] tabular-nums", scoreTone(i.overallScore))}>{i.overallScore}</span>
                 ) : (
                   <Badge tone="primary">{d.status[i.status]}</Badge>
                 )}

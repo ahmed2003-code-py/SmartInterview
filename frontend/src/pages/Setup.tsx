@@ -17,10 +17,10 @@ const JD_MAX = 2500;
 
 function Section({ title, hint, aside, children }: { title: string; hint?: string; aside?: ReactNode; children: ReactNode }) {
   return (
-    <section className="border-t border-border py-8 first:border-t-0 first:pt-0">
+    <section className="border-t border-border py-8">
       <div className="mb-4 flex items-baseline justify-between gap-4">
         <div>
-          <h2 className="font-semibold">{title}</h2>
+          <h2 className="font-medium">{title}</h2>
           {hint && <p className="mt-0.5 text-sm text-muted">{hint}</p>}
         </div>
         {aside}
@@ -30,8 +30,8 @@ function Section({ title, hint, aside, children }: { title: string; hint?: strin
   );
 }
 
-/** Selectable tile used for every single-choice option on this page. */
-function Option({ selected, onSelect, title, hint, className }: { selected: boolean; onSelect: () => void; title: ReactNode; hint?: ReactNode; className?: string }) {
+/** Role row with a radio indicator. */
+function RoleOption({ selected, onSelect, title, hint }: { selected: boolean; onSelect: () => void; title: string; hint?: string }) {
   return (
     <button
       type="button"
@@ -39,14 +39,41 @@ function Option({ selected, onSelect, title, hint, className }: { selected: bool
       aria-checked={selected}
       onClick={onSelect}
       className={cn(
-        "relative rounded-lg border bg-surface px-4 py-3 text-start transition-colors outline-none focus-visible:ring-3 focus-visible:ring-primary/25",
-        selected ? "border-primary bg-primary-soft/50 ring-1 ring-primary" : "border-border hover:border-border-strong",
-        className,
+        "flex items-start gap-3 rounded-lg border px-4 py-3.5 text-start transition-colors outline-none focus-visible:ring-3 focus-visible:ring-primary/25",
+        selected ? "border-primary bg-primary-soft/45" : "border-border bg-surface hover:border-border-strong",
       )}
     >
-      <span className="block text-sm font-medium">{title}</span>
-      {hint && <span className="mt-0.5 block text-[13px] leading-snug text-muted">{hint}</span>}
+      <span className={cn("mt-[3px] grid size-4 shrink-0 place-items-center rounded-full border", selected ? "border-primary" : "border-border-strong")}>
+        {selected && <span className="size-2 rounded-full bg-primary" />}
+      </span>
+      <span>
+        <span className="block text-sm font-medium">{title}</span>
+        {hint && <span className="mt-0.5 block text-[13px] leading-snug text-muted">{hint}</span>}
+      </span>
     </button>
+  );
+}
+
+/** Compact segmented control for short single-choice settings. */
+function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; label: string }) {
+  return (
+    <div role="radiogroup" aria-label={label} className="inline-flex w-full rounded-lg border border-border bg-surface-2 p-1 sm:w-auto">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          type="button"
+          role="radio"
+          aria-checked={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "h-9 flex-1 rounded-md px-5 text-sm whitespace-nowrap transition-colors outline-none focus-visible:ring-3 focus-visible:ring-primary/25 sm:flex-none",
+            value === o.value ? "bg-surface font-medium text-fg shadow-sm ring-1 ring-border" : "text-muted hover:text-fg",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -88,92 +115,79 @@ export default function Setup() {
 
   return (
     <div className="animate-fade-up">
-      <h1 className="text-[1.75rem] font-semibold tracking-tight sm:text-3xl">{d.setup.title}</h1>
-      <p className="mt-1.5 text-muted">{d.setup.subtitle}</p>
+      <h1 className="font-display text-[2.3rem] leading-tight font-[450] sm:text-[2.75rem]">{d.setup.title}</h1>
+      <p className="mt-2 text-muted">{d.setup.subtitle}</p>
 
-      <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_300px] lg:gap-14">
+      <div className="mt-10 grid gap-10 lg:grid-cols-[1fr_300px] lg:gap-16">
         <div>
           <Section title={d.setup.role} hint={d.setup.roleHint}>
             {roles.error ? (
               <ErrorState onRetry={roles.reload} className="py-6" />
             ) : (
-              <div role="radiogroup" aria-label={d.setup.role} className="grid gap-2.5 sm:grid-cols-2">
+              <div role="radiogroup" aria-label={d.setup.role} className="grid gap-2 sm:grid-cols-2">
                 {roles.loading || !roles.data
                   ? Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-[68px]" />)
                   : roles.data.roles.map((r) => (
-                      <Option key={r.id} selected={roleId === r.id} onSelect={() => setRoleId(r.id)} title={roleName(r)} hint={lang === "ar" ? r.descriptionAr : r.descriptionEn} />
+                      <RoleOption key={r.id} selected={roleId === r.id} onSelect={() => setRoleId(r.id)} title={roleName(r)} hint={lang === "ar" ? r.descriptionAr : r.descriptionEn} />
                     ))}
               </div>
             )}
           </Section>
 
           <Section title={d.setup.language} hint={d.setup.languageHint}>
-            <div role="radiogroup" aria-label={d.setup.language} className="grid max-w-md grid-cols-2 gap-2.5">
-              {(["ar", "en"] as Lang[]).map((l) => (
-                <Option key={l} selected={language === l} onSelect={() => setLanguage(l)} title={l === "ar" ? "العربية" : "English"} className="text-center" />
-              ))}
-            </div>
+            <Segmented
+              label={d.setup.language}
+              value={language}
+              onChange={setLanguage}
+              options={[
+                { value: "ar", label: "العربية" },
+                { value: "en", label: "English" },
+              ]}
+            />
           </Section>
 
           <Section title={d.setup.difficulty}>
-            <div role="radiogroup" aria-label={d.setup.difficulty} className="grid gap-2.5 sm:grid-cols-3">
-              {DIFFICULTIES.map((v) => (
-                <Option key={v} selected={difficulty === v} onSelect={() => setDifficulty(v)} title={d.levels[v]} hint={d.levelHints[v]} />
-              ))}
-            </div>
+            <Segmented label={d.setup.difficulty} value={difficulty} onChange={setDifficulty} options={DIFFICULTIES.map((v) => ({ value: v, label: d.levels[v] }))} />
+            <p className="mt-3 text-sm text-muted">{d.levelHints[difficulty]}</p>
           </Section>
 
           <Section title={d.setup.length}>
-            <div role="radiogroup" aria-label={d.setup.length} className="grid gap-2.5 sm:grid-cols-3">
-              {LENGTHS.map((v) => (
-                <Option key={v} selected={length === v} onSelect={() => setLength(v)} title={d.lengths[v]} hint={d.lengthHints[v]} />
-              ))}
-            </div>
+            <Segmented label={d.setup.length} value={length} onChange={setLength} options={LENGTHS.map((v) => ({ value: v, label: d.lengths[v] }))} />
+            <p className="mt-3 text-sm text-muted">{d.lengthHints[length]}</p>
           </Section>
 
-          <Section
-            title={d.setup.jd}
-            hint={d.setup.jdHint}
-            aside={<span className="shrink-0 rounded-sm bg-surface-2 px-1.5 py-0.5 text-xs text-muted">{d.setup.optional}</span>}
-          >
-            <Textarea
-              value={jd}
-              onChange={(e) => setJd(e.target.value.slice(0, JD_MAX))}
-              placeholder={d.setup.jdPlaceholder}
-              rows={6}
-              dir="auto"
-              aria-label={d.setup.jd}
-            />
+          <Section title={d.setup.jd} hint={d.setup.jdHint} aside={<span className="shrink-0 text-xs text-subtle">{d.setup.optional}</span>}>
+            <Textarea value={jd} onChange={(e) => setJd(e.target.value.slice(0, JD_MAX))} placeholder={d.setup.jdPlaceholder} rows={5} dir="auto" aria-label={d.setup.jd} />
             <p className="mt-1.5 text-end text-xs text-subtle tabular-nums">
               {jd.length} / {JD_MAX}
             </p>
           </Section>
         </div>
 
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        <aside className="lg:sticky lg:top-24 lg:self-start lg:pt-8">
           <div className="rounded-xl border border-border bg-surface p-5">
-            <h2 className="text-sm font-semibold">{d.setup.summary}</h2>
-            <dl className="mt-4 space-y-3 text-sm">
+            <h2 className="text-[13px] text-subtle">{d.setup.summary}</h2>
+            <dl className="mt-3 divide-y divide-border text-sm">
               {summary.map(([k, v]) => (
-                <div key={k} className="flex justify-between gap-4">
+                <div key={k} className="flex justify-between gap-4 py-2.5">
                   <dt className="text-muted">{k}</dt>
                   <dd className="text-end font-medium">{v}</dd>
                 </div>
               ))}
               {jd.trim() && (
-                <div className="flex justify-between gap-4">
+                <div className="flex justify-between gap-4 py-2.5">
                   <dt className="text-muted">{d.setup.jd}</dt>
-                  <dd className="text-end font-medium text-primary">{d.setup.customJd}</dd>
+                  <dd className="text-end font-medium">{d.setup.customJd}</dd>
                 </div>
               )}
             </dl>
-            <Button size="lg" className="mt-6 w-full" disabled={!roleId} loading={busy} onClick={start}>
+            <Button size="lg" className="mt-4 w-full" disabled={!roleId} loading={busy} onClick={start}>
               {busy ? d.setup.starting : d.setup.start}
               {!busy && <ArrowRight className="size-4 rtl:-scale-x-100" />}
             </Button>
             {!roleId && <p className="mt-2 text-center text-xs text-subtle">{d.setup.chooseRole}</p>}
-            <p className="mt-5 flex gap-2.5 border-t border-border pt-4 text-[13px] leading-relaxed text-muted">
-              <Mic className="mt-0.5 size-4 shrink-0 text-subtle" />
+            <p className="mt-5 flex gap-2.5 border-t border-border pt-4 text-xs leading-relaxed text-muted">
+              <Mic className="mt-px size-3.5 shrink-0 text-subtle" />
               {d.setup.micNote}
             </p>
           </div>

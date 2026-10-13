@@ -108,7 +108,6 @@ export interface InterviewSummary {
 
 export interface AppConfig {
   mockAI: boolean;
-  sttProvider: string;
   maxAnswerSeconds: number;
   maxJobDescriptionChars: number;
 }

@@ -11,16 +11,17 @@ import { api, type InterviewDTO, type QuestionDTO } from "@/lib/api";
 import { useI18n } from "@/i18n";
 import { cn, scoreBand, scoreTone } from "@/lib/utils";
 
-const bandTone = { excellent: "success", good: "success", fair: "warning", needsWork: "danger" } as const;
 
-function ListBlock({ title, items, marker }: { title: string; items: string[]; marker: string }) {
+function ListBlock({ title, items, marker, tone }: { title: string; items: string[]; marker: string; tone: string }) {
   return (
     <div>
-      <h3 className="font-semibold">{title}</h3>
-      <ul className="mt-3 space-y-2.5">
+      <h3 className="font-medium">{title}</h3>
+      <ul className="mt-4 divide-y divide-border border-t border-border">
         {items.map((s, i) => (
-          <li key={i} className="flex gap-3 text-[15px] leading-relaxed" dir="auto">
-            <span className={cn("mt-[0.6em] size-1.5 shrink-0 rounded-full", marker)} />
+          <li key={i} className="flex gap-3 py-3 text-[15px] leading-relaxed" dir="auto">
+            <span className={cn("w-3 shrink-0 font-medium", tone)} aria-hidden>
+              {marker}
+            </span>
             <span className="text-muted">{s}</span>
           </li>
         ))}
@@ -43,11 +44,11 @@ function QuestionItem({ q, index }: { q: QuestionDTO; index: number }) {
               {d.room.followUp}
             </Badge>
           )}
-          <span className="block leading-relaxed font-medium" dir="auto">
+          <span className="block text-[15px] leading-relaxed font-medium" dir="auto">
             {q.text}
           </span>
         </span>
-        {a?.score != null && <span className={cn("shrink-0 text-lg font-semibold tabular-nums", scoreTone(a.score))}>{a.score}</span>}
+        {a?.score != null && <span className={cn("shrink-0 font-display text-[1.4rem] leading-none font-[450] tabular-nums", scoreTone(a.score))}>{a.score}</span>}
         <ChevronDown className={cn("mt-1 size-4 shrink-0 text-subtle transition-transform", open && "rotate-180")} />
       </button>
       {open && a && (
@@ -67,8 +68,8 @@ function QuestionItem({ q, index }: { q: QuestionDTO; index: number }) {
             </div>
           )}
           {a.suggestedAnswer && (
-            <div className="rounded-lg bg-primary-soft/60 p-4">
-              <p className="text-xs font-medium text-primary-soft-fg">{d.report.suggested}</p>
+            <div className="rounded-lg border border-border bg-bg-subtle p-4">
+              <p className="text-xs font-medium text-fg">{d.report.suggested}</p>
               <p className="mt-1.5 text-[15px] leading-relaxed" dir="auto">
                 {a.suggestedAnswer}
               </p>
@@ -148,10 +149,10 @@ export default function Report() {
   return (
     <div className="animate-fade-up">
       {backLink}
-      <div className="mt-5 flex flex-wrap items-end justify-between gap-5">
+      <div className="mt-6 flex flex-wrap items-end justify-between gap-5">
         <div>
-          <p className="text-sm font-medium text-primary">{d.report.title}</p>
-          <h1 className="mt-1.5 text-[1.75rem] font-semibold tracking-tight sm:text-3xl">{roleName}</h1>
+          <p className="text-[13px] text-subtle">{d.report.title}</p>
+          <h1 className="mt-1.5 font-display text-[2.3rem] leading-tight font-[450] sm:text-[2.75rem]">{roleName}</h1>
           <p className="mt-2 text-sm text-muted">
             {formatDate(i.startedAt, true)} · {d.langs[i.language]} · {d.levels[i.difficulty]} · {formatDuration(i.durationSec)} · {fmt(d.common.questionsCount, { n: answered.length })}
           </p>
@@ -164,52 +165,51 @@ export default function Report() {
         </Button>
       </div>
 
-      <section className="mt-10 grid overflow-hidden rounded-xl border border-border bg-surface lg:grid-cols-[320px_1fr]">
-        <div className="flex flex-col justify-between border-b border-border p-6 sm:p-8 lg:border-e lg:border-b-0">
+      <section className="mt-10 grid border-y border-border lg:grid-cols-[300px_1fr]">
+        <div className="flex flex-col justify-between border-b border-border py-8 lg:border-e lg:border-b-0 lg:pe-10">
           <div>
-            <p className="text-sm text-muted">{d.report.overall}</p>
-            <p className="mt-2 text-6xl font-semibold tracking-tight tabular-nums">
+            <p className="text-[13px] text-subtle">{d.report.overall}</p>
+            <p className="mt-3 font-display text-[5.5rem] leading-[0.9] font-[450] tabular-nums">
               {r.overallScore}
-              <span className="text-2xl font-normal text-subtle"> / 100</span>
+              <span className="font-sans text-2xl text-subtle"> / 100</span>
             </p>
-            <Badge tone={bandTone[band]} className="mt-4 px-2 py-1 text-[13px]">
-              {d.report.bands[band]}
-            </Badge>
+            <p className={cn("mt-4 text-sm font-medium", band === "excellent" || band === "good" ? "text-success" : band === "fair" ? "text-warning" : "text-danger")}>{d.report.bands[band]}</p>
           </div>
           <p className="mt-8 text-xs leading-relaxed text-subtle">{d.report.disclaimer}</p>
         </div>
-        <div className="p-6 sm:p-8">
-          <h2 className="mb-5 text-sm font-semibold">{d.report.categories}</h2>
+        <div className="py-8 lg:ps-10">
+          <h2 className="mb-6 text-[13px] text-subtle">{d.report.categories}</h2>
           <ScoreBars scores={r.categoryScores} />
         </div>
       </section>
 
-      <section className="mt-12 grid gap-10 md:grid-cols-2">
-        <ListBlock title={d.report.strengths} items={r.strengths} marker="bg-success" />
-        <ListBlock title={d.report.improvements} items={r.improvements} marker="bg-warning" />
+      <section className="mt-14 grid gap-12 md:grid-cols-2">
+        <ListBlock title={d.report.strengths} items={r.strengths} marker="+" tone="text-success" />
+        <ListBlock title={d.report.improvements} items={r.improvements} marker="–" tone="text-warning" />
       </section>
 
-      <section className="mt-12 grid gap-10 border-t border-border pt-10 md:grid-cols-[1.6fr_1fr]">
+      <section className="mt-14 grid gap-12 md:grid-cols-[1.6fr_1fr]">
         <div>
-          <h2 className="font-semibold">{d.report.general}</h2>
-          <p className="mt-3 text-[15px] leading-relaxed text-muted" dir="auto">
+          <h2 className="font-medium">{d.report.general}</h2>
+          <p className="mt-4 max-w-2xl font-display text-[1.2rem] leading-relaxed" dir="auto">
             {r.generalFeedback}
           </p>
         </div>
         <div>
-          <h2 className="font-semibold">{d.report.practice}</h2>
-          <ul className="mt-3 flex flex-wrap gap-2">
-            {r.practiceAreas.map((p) => (
-              <li key={p} className="rounded-md border border-border bg-surface px-2.5 py-1.5 text-sm" dir="auto">
+          <h2 className="font-medium">{d.report.practice}</h2>
+          <ol className="mt-4 divide-y divide-border border-t border-border">
+            {r.practiceAreas.map((p, idx) => (
+              <li key={p} className="flex gap-3 py-3 text-[15px]" dir="auto">
+                <span className="w-4 shrink-0 text-subtle tabular-nums">{idx + 1}</span>
                 {p}
               </li>
             ))}
-          </ul>
+          </ol>
         </div>
       </section>
 
-      <section className="mt-12">
-        <h2 className="mb-4 font-semibold">{d.report.breakdown}</h2>
+      <section className="mt-16">
+        <h2 className="mb-4 font-medium">{d.report.breakdown}</h2>
         <ol className="overflow-hidden rounded-xl border border-border bg-surface">
           {answered.map((q, idx) => (
             <QuestionItem key={q.id} q={q} index={idx} />

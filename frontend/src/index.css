@@ -1,5 +1,8 @@
 @import "tailwindcss";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/newsreader/opsz.css";
+@import "@fontsource-variable/newsreader/opsz-italic.css";
+@import "@fontsource-variable/noto-naskh-arabic";
 @import "@fontsource/ibm-plex-sans-arabic/400.css";
 @import "@fontsource/ibm-plex-sans-arabic/500.css";
 @import "@fontsource/ibm-plex-sans-arabic/600.css";
@@ -7,67 +10,71 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* ---------- Design tokens ---------- */
+/* ---------- Design tokens ----------
+   Mostly neutral (warm paper / graphite). One accent family (muted violet)
+   reserved for primary actions, selection, progress and focus. */
 :root {
-  --bg: #ffffff;
-  --bg-subtle: #f6f7f9;
+  --bg: #f8f7f4;
+  --bg-subtle: #f2f0eb;
   --surface: #ffffff;
-  --surface-2: #f2f4f7;
-  --text: #0e1525;
-  --text-muted: #566075;
-  --text-subtle: #868ea1;
-  --border: #e3e6ec;
-  --border-strong: #cbd1db;
-  --primary: #3d4edb;
-  --primary-hover: #3141c4;
+  --surface-2: #f1efea;
+  --text: #1b1a17;
+  --text-muted: #5f5b53;
+  --text-subtle: #8f8a80;
+  --border: #e6e2da;
+  --border-strong: #d3cec4;
+  --ink: #1b1a17; /* neutral dark surface (interviewer avatar, CTA band) */
+  --ink-fg: #f8f7f4;
+  --primary: #4d46a6;
+  --primary-hover: #403a92;
   --primary-fg: #ffffff;
-  --primary-soft: #eef0fd;
-  --primary-soft-text: #2f3db8;
-  --accent: #7a5af0;
-  --success: #12805c;
-  --success-soft: #e7f5ee;
-  --warning: #a8620a;
-  --warning-soft: #fdf3e1;
-  --danger: #c9372c;
-  --danger-soft: #fcebea;
-  --navy: #0b1226; /* fixed dark surface used in both themes (CTA band, auth panel) */
-  --ring: color-mix(in srgb, var(--primary) 40%, transparent);
-  --shadow-sm: 0 1px 2px rgb(14 21 37 / 0.05);
-  --shadow-md: 0 1px 2px rgb(14 21 37 / 0.04), 0 8px 24px -8px rgb(14 21 37 / 0.12);
+  --primary-soft: #efeef8;
+  --primary-soft-text: #403a92;
+  --success: #2f7a52;
+  --success-soft: #e9f3ec;
+  --warning: #a5620c;
+  --warning-soft: #f8efdf;
+  --danger: #b4382e;
+  --danger-soft: #f9e9e6;
+  --ring: color-mix(in srgb, var(--primary) 45%, transparent);
+  --shadow-sm: 0 1px 2px rgb(27 26 23 / 0.04);
+  --shadow-md: 0 1px 2px rgb(27 26 23 / 0.04), 0 12px 32px -12px rgb(27 26 23 / 0.14);
   --font: "Geist Variable", "IBM Plex Sans Arabic", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Newsreader Variable", "Noto Naskh Arabic Variable", Georgia, serif;
   color-scheme: light;
 }
 
 .dark {
-  --bg: #0a1020;
-  --bg-subtle: #0d1427;
-  --surface: #10182d;
-  --surface-2: #162039;
-  --text: #e8ecf5;
-  --text-muted: #9aa3b9;
-  --text-subtle: #6c7590;
-  --border: #1e2943;
-  --border-strong: #2b3756;
-  --primary: #5866f2;
-  --primary-hover: #6a77ff;
+  --bg: #121214;
+  --bg-subtle: #161619;
+  --surface: #1a1a1e;
+  --surface-2: #232328;
+  --text: #ecebe8;
+  --text-muted: #a3a09a;
+  --text-subtle: #75726c;
+  --border: #29292f;
+  --border-strong: #3a3a41;
+  --ink: #ecebe8;
+  --ink-fg: #121214;
+  --primary: #6c65cf;
+  --primary-hover: #7a74db;
   --primary-fg: #ffffff;
-  --primary-soft: #18204a;
-  --primary-soft-text: #aab3ff;
-  --accent: #9b85ff;
-  --success: #3cc48d;
-  --success-soft: #0f2a21;
-  --warning: #eeb04c;
-  --warning-soft: #2b2213;
-  --danger: #f2706a;
-  --danger-soft: #2e1619;
-  --navy: #070c1a;
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3);
-  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 12px 32px -12px rgb(0 0 0 / 0.5);
+  --primary-soft: #23213a;
+  --primary-soft-text: #bdb8f5;
+  --success: #62bd8c;
+  --success-soft: #16261d;
+  --warning: #dfa452;
+  --warning-soft: #2a2215;
+  --danger: #eb7b70;
+  --danger-soft: #2f1a18;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.35);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 16px 40px -16px rgb(0 0 0 / 0.6);
   color-scheme: dark;
 }
 
 :root:lang(ar) {
   --font: "IBM Plex Sans Arabic", "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Noto Naskh Arabic Variable", "Newsreader Variable", serif;
 }
 
 @theme inline {
@@ -80,26 +87,27 @@
   --color-subtle: var(--text-subtle);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
+  --color-ink: var(--ink);
+  --color-ink-fg: var(--ink-fg);
   --color-primary: var(--primary);
   --color-primary-hover: var(--primary-hover);
   --color-primary-fg: var(--primary-fg);
   --color-primary-soft: var(--primary-soft);
   --color-primary-soft-fg: var(--primary-soft-text);
-  --color-accent: var(--accent);
   --color-success: var(--success);
   --color-success-soft: var(--success-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
-  --color-navy: var(--navy);
   --font-sans: var(--font);
+  --font-display: var(--font-display);
   --shadow-sm: var(--shadow-sm);
   --shadow-md: var(--shadow-md);
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
 }
 
 @layer base {
@@ -122,6 +130,14 @@
   /* Arabic script must never be letter-spaced. */
   :lang(ar) * {
     letter-spacing: 0 !important;
+  }
+  /* Arabic has no italic; Naskh headings read better slightly larger. */
+  :lang(ar) .font-display,
+  :lang(ar) .italic {
+    font-style: normal !important;
+  }
+  :lang(ar) .font-display {
+    line-height: 1.45;
   }
   ::selection {
     background: color-mix(in srgb, var(--primary) 25%, transparent);

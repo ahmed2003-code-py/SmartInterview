@@ -10,21 +10,52 @@ export interface STTProvider {
   transcribe(audio: Buffer, mimeType: string, language: Lang, question?: string): Promise<string>;
 }
 
-// Whisper-family models sometimes "hear" these phrases in silence or noise.
+// Phrases Whisper tends to "hear" in silence or background noise.
 const HALLUCINATIONS = [
-  /^thank(s| you)( so much)? for watching[.!]?$/i,
-  /^(please )?subscribe[.!]?$/i,
-  /^you$/i,
+  /^(thank(s| you)( so much)?( for watching| for listening)?|thanks for watching)[.!]?$/i,
+  /^(please )?(like and )?subscribe[.!]?$/i,
+  /^(you|bye|okay)[.!]?$/i,
+  /^\[?(music|silence|applause|blank_audio)\]?$/i,
   /اشتركوا? في (ال)?قناة/,
   /ترجمة نانسي قنقر/,
-  /^شكرا(ً)? (لكم )?(على|علي) (ال)?مشاهدة[.!]?$/,
-  /^موسيقى$/,
+  /^شكرا(ً)?( لكم| جزيلا)?( (على|علي) (ال)?مشاهدة)?[.!]?$/,
+  /^(موسيقى|سبحان الله)[.!]?$/,
 ];
 
-function clean(text: string): string {
-  const t = text.replace(/\s+/g, " ").trim();
-  if (!t || HALLUCINATIONS.some((re) => re.test(t))) return "";
-  return t;
+const isHallucination = (text: string) => HALLUCINATIONS.some((re) => re.test(text.trim()));
+
+interface VerboseSegment {
+  text: string;
+  avg_logprob?: number;
+  no_speech_prob?: number;
+}
+
+interface VerboseTranscription {
+  text?: string;
+  duration?: number;
+  segments?: VerboseSegment[];
+}
+
+/**
+ * Turns a verbose Whisper result into the answer text.
+ * Drops segments Whisper itself marks as probable silence, plus known hallucinated phrases.
+ * Thresholds follow Whisper's own silence rule, so normal (even quiet) speech is kept.
+ */
+export function cleanTranscription(result: VerboseTranscription): string {
+  const segments = result.segments ?? [];
+  const kept = segments.length
+    ? segments.filter((s) => {
+        const silent = (s.no_speech_prob ?? 0) > 0.6 && (s.avg_logprob ?? 0) < -1;
+        return !silent && !isHallucination(s.text);
+      })
+    : [{ text: result.text ?? "" }];
+  const text = kept
+    .map((s) => s.text.trim())
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text || isHallucination(text)) return "";
+  return text;
 }
 
 function extFor(mimeType: string) {
@@ -36,60 +67,42 @@ function extFor(mimeType: string) {
   return "webm";
 }
 
-/** Both Groq Whisper and a vLLM-served Cohere model expose the OpenAI transcription API. */
-async function openAICompatibleTranscribe(opts: { url: string; apiKey: string; model: string; audio: Buffer; mimeType: string; language: Lang; prompt?: string }) {
-  const form = new FormData();
-  form.append("file", new Blob([new Uint8Array(opts.audio)], { type: opts.mimeType }), `answer.${extFor(opts.mimeType)}`);
-  form.append("model", opts.model);
-  form.append("language", opts.language);
-  form.append("response_format", "json");
-  form.append("temperature", "0");
-  if (opts.prompt) form.append("prompt", opts.prompt);
-
-  let res: Response;
-  try {
-    res = await fetch(opts.url, {
-      method: "POST",
-      headers: opts.apiKey ? { Authorization: `Bearer ${opts.apiKey}` } : {},
-      body: form,
-      signal: AbortSignal.timeout(45_000),
-    });
-  } catch (err) {
-    console.error("STT network error", err);
-    throw new HttpError(502, "STT_FAILED", "Could not reach the transcription service");
-  }
-  if (!res.ok) {
-    console.error("STT error", res.status, (await res.text()).slice(0, 500));
-    throw new HttpError(502, "STT_FAILED", "Transcription failed");
-  }
-  const data = (await res.json()) as { text?: string };
-  return clean(data.text ?? "");
-}
-
 // A short context prompt helps Whisper with domain words and Arabic/English mixing.
 const WHISPER_PROMPT: Record<Lang, string> = {
   en: "A job interview for a teaching position. Classroom management, lesson planning, assessment.",
   ar: "مقابلة عمل لوظيفة تدريس. إدارة الفصل، تخطيط الدروس، التقييم، الطلاب، الـ lesson plan.",
 };
 
+/** Groq Whisper (whisper-large-v3-turbo). Audio stays in memory and is discarded after the request. */
 const groqWhisper: STTProvider = {
   name: "groq-whisper",
-  transcribe: (audio, mimeType, language, question) =>
-    openAICompatibleTranscribe({
-      url: "https://api.groq.com/openai/v1/audio/transcriptions",
-      apiKey: config.stt.groqApiKey,
-      model: config.stt.groqModel,
-      audio,
-      mimeType,
-      language,
-      prompt: question ? `${WHISPER_PROMPT[language]} ${question}`.slice(0, 600) : WHISPER_PROMPT[language],
-    }),
-};
+  async transcribe(audio, mimeType, language, question) {
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(audio)], { type: mimeType }), `answer.${extFor(mimeType)}`);
+    form.append("model", config.stt.groqModel);
+    form.append("language", language);
+    form.append("temperature", "0");
+    form.append("response_format", "verbose_json");
+    form.append("prompt", question ? `${WHISPER_PROMPT[language]} ${question}`.slice(0, 600) : WHISPER_PROMPT[language]);
 
-const cohere: STTProvider = {
-  name: "cohere-transcribe",
-  transcribe: (audio, mimeType, language) =>
-    openAICompatibleTranscribe({ url: config.stt.cohereUrl, apiKey: config.stt.cohereApiKey, model: config.stt.cohereModel, audio, mimeType, language }),
+    let res: Response;
+    try {
+      res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${config.stt.groqApiKey}` },
+        body: form,
+        signal: AbortSignal.timeout(45_000),
+      });
+    } catch (err) {
+      console.error("STT network error", err instanceof Error ? err.message : err);
+      throw new HttpError(502, "STT_FAILED", "Could not reach the transcription service");
+    }
+    if (!res.ok) {
+      console.error("STT error", res.status, (await res.text()).slice(0, 300));
+      throw new HttpError(502, "STT_FAILED", "Transcription failed");
+    }
+    return cleanTranscription((await res.json()) as VerboseTranscription);
+  },
 };
 
 const mock: STTProvider = {
@@ -101,7 +114,5 @@ const mock: STTProvider = {
 };
 
 export function getSTT(): STTProvider {
-  if (config.mockAI || config.stt.provider === "mock") return mock;
-  if (config.stt.provider === "cohere") return cohere;
-  return groqWhisper;
+  return config.mockAI ? mock : groqWhisper;
 }

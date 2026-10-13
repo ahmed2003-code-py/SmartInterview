@@ -2,7 +2,7 @@ import { forwardRef, type InputHTMLAttributes, type ReactNode, type TextareaHTML
 import { cn } from "@/lib/utils";
 
 const field =
-  "w-full rounded-md border border-border bg-surface text-fg placeholder:text-subtle transition-colors outline-none hover:border-border-strong focus:border-primary focus:ring-3 focus:ring-primary/15 disabled:opacity-60 aria-invalid:border-danger aria-invalid:focus:ring-danger/15";
+  "w-full rounded-md border border-border-strong/80 bg-surface text-fg placeholder:text-subtle transition-colors outline-none hover:border-border-strong focus:border-primary focus:ring-3 focus:ring-primary/12 disabled:opacity-60 aria-invalid:border-danger aria-invalid:focus:ring-danger/15";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input({ className, ...props }, ref) {
   return <input ref={ref} className={cn(field, "h-10 px-3 text-sm", className)} {...props} />;

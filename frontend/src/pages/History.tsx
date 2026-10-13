@@ -30,8 +30,8 @@ export default function History() {
 
   return (
     <div className="animate-fade-up">
-      <h1 className="text-[1.75rem] font-semibold tracking-tight sm:text-3xl">{d.history.title}</h1>
-      <p className="mt-1.5 text-muted">{d.history.subtitle}</p>
+      <h1 className="font-display text-[2.3rem] leading-tight font-[450] sm:text-[2.75rem]">{d.history.title}</h1>
+      <p className="mt-2 text-muted">{d.history.subtitle}</p>
 
       <div className="mt-8 flex flex-wrap gap-2">
         <Select
@@ -69,7 +69,7 @@ export default function History() {
         )}
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-xl border border-border bg-surface md:pt-3">
+      <div className="mt-6">
         {list.error ? (
           <ErrorState onRetry={list.reload} />
         ) : list.loading || !list.data ? (

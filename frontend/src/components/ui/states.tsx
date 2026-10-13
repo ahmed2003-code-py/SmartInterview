@@ -8,7 +8,7 @@ export function EmptyState({ title, body, action, className, icon }: { title: st
   return (
     <div className={cn("flex flex-col items-center px-6 py-14 text-center", className)}>
       {icon && <div className="mb-4 grid size-11 place-items-center rounded-lg border border-border bg-surface text-muted [&_svg]:size-5">{icon}</div>}
-      <h3 className="text-base font-semibold">{title}</h3>
+      <h3 className="font-display text-xl font-[450]">{title}</h3>
       {body && <p className="mt-1.5 max-w-sm text-sm text-muted">{body}</p>}
       {action && <div className="mt-5">{action}</div>}
     </div>

@@ -23,15 +23,15 @@ export function AppLayout() {
 
   return (
     <div className="min-h-dvh bg-bg">
-      <header className="sticky top-0 z-40 border-b border-border bg-bg/85 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-6xl items-center gap-6 px-4 sm:px-6">
+      <header className="sticky top-0 z-40 border-b border-border bg-bg/90 backdrop-blur-sm">
+        <div className="mx-auto flex h-14 max-w-6xl items-center gap-8 px-4 sm:px-6">
           <Logo to="/dashboard" />
-          <nav className="hidden items-center gap-1 md:flex">
+          <nav className="hidden h-full items-center gap-6 md:flex">
             {links.map((l) => (
               <NavLink
                 key={l.to}
                 to={l.to}
-                className={({ isActive }) => cn("rounded-md px-3 py-1.5 text-sm transition-colors", isActive ? "bg-surface-2 font-medium text-fg" : "text-muted hover:text-fg")}
+                className={({ isActive }) => cn("flex h-full items-center border-b-2 text-sm transition-colors", isActive ? "border-fg font-medium text-fg" : "border-transparent text-muted hover:text-fg")}
               >
                 {l.label}
               </NavLink>
@@ -50,7 +50,7 @@ export function AppLayout() {
             <ThemeToggle />
             <Menu>
               <MenuTrigger asChild>
-                <button className="ms-1 grid size-9 place-items-center rounded-full bg-primary-soft text-[13px] font-semibold text-primary-soft-fg outline-none focus-visible:ring-3 focus-visible:ring-primary/30" aria-label={d.nav.menu}>
+                <button className="ms-1 grid size-8 place-items-center rounded-full border border-border-strong bg-surface text-xs font-semibold text-fg outline-none focus-visible:ring-3 focus-visible:ring-primary/30" aria-label={d.nav.menu}>
                   <span className="max-md:hidden">{user ? initials(user.name) : ""}</span>
                   <MenuIcon className="size-4 md:hidden" />
                 </button>
@@ -84,7 +84,7 @@ export function AppLayout() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-6xl px-4 pt-8 pb-20 sm:px-6 sm:pt-10">
+      <main className="mx-auto max-w-6xl px-4 pt-10 pb-24 sm:px-6 sm:pt-14">
         <Outlet />
       </main>
     </div>

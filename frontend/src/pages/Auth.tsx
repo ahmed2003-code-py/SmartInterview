@@ -2,9 +2,8 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Field, Input } from "@/components/ui/input";
-import { Logo, LogoMark } from "@/components/layout/Logo";
+import { Logo } from "@/components/layout/Logo";
 import { LanguageSwitch, ThemeToggle } from "@/components/layout/Preferences";
-import { Waveform } from "@/features/interview/Waveform";
 import { useI18n } from "@/i18n";
 import { useAuth } from "@/lib/auth";
 import { ApiError } from "@/lib/api";
@@ -12,37 +11,23 @@ import { ApiError } from "@/lib/api";
 function AuthShell({ title, subtitle, children, footer }: { title: string; subtitle: string; children: ReactNode; footer: ReactNode }) {
   const { d } = useI18n();
   return (
-    <div className="grid min-h-dvh bg-bg lg:grid-cols-[1fr_1fr]">
-      <div className="flex flex-col px-4 py-5 sm:px-8">
-        <div className="flex items-center justify-between">
-          <Logo />
-          <div className="flex items-center gap-1">
-            <LanguageSwitch />
-            <ThemeToggle />
-          </div>
+    <div className="flex min-h-dvh flex-col bg-bg">
+      <header className="flex h-14 items-center justify-between px-4 sm:px-6">
+        <Logo />
+        <div className="flex items-center gap-1">
+          <LanguageSwitch />
+          <ThemeToggle />
         </div>
-        <div className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center py-12">
-          <h1 className="text-[1.75rem] font-semibold tracking-tight">{title}</h1>
+      </header>
+      <main className="flex flex-1 flex-col items-center justify-center px-4 pt-6 pb-16">
+        <div className="w-full max-w-[24rem] animate-fade-up">
+          <h1 className="font-display text-[2.1rem] leading-tight font-[450]">{title}</h1>
           <p className="mt-2 text-muted">{subtitle}</p>
-          <div className="mt-8">{children}</div>
-          <p className="mt-8 text-sm text-muted">{footer}</p>
+          <div className="mt-8 rounded-xl border border-border bg-surface p-6 sm:p-7">{children}</div>
+          <p className="mt-6 text-center text-sm text-muted">{footer}</p>
         </div>
-      </div>
-
-      <aside className="relative hidden overflow-hidden bg-navy p-12 text-white lg:flex lg:flex-col lg:justify-center lg:gap-14 dark:border-s dark:border-border dark:bg-surface">
-        <p className="max-w-md text-2xl leading-snug font-medium tracking-tight text-white/90">{d.auth.panelQuote}</p>
-        <div className="max-w-md rounded-xl border border-white/10 bg-white/[0.04] p-6">
-          <div className="flex items-center gap-3">
-            <LogoMark className="size-9" />
-            <div>
-              <p className="text-sm font-medium">{d.room.interviewer}</p>
-              <p className="text-xs text-white/55">{d.auth.panelQuestion}</p>
-            </div>
-          </div>
-          <p className="mt-5 text-lg leading-snug">{d.auth.panelText}</p>
-          <Waveform className="mt-6 h-6 text-[#8d98ff]" bars={32} active />
-        </div>
-      </aside>
+      </main>
+      <p className="px-4 pb-6 text-center text-xs text-subtle">{d.common.tagline}</p>
     </div>
   );
 }
@@ -90,7 +75,7 @@ export function LoginPage() {
       footer={
         <>
           {d.auth.noAccount}{" "}
-          <Link to="/register" className="font-medium text-primary hover:underline">
+          <Link to="/register" className="font-medium text-fg underline decoration-border-strong underline-offset-4 hover:decoration-fg">
             {d.auth.signUp}
           </Link>
         </>
@@ -151,7 +136,7 @@ export function RegisterPage() {
       footer={
         <>
           {d.auth.haveAccount}{" "}
-          <Link to="/login" className="font-medium text-primary hover:underline">
+          <Link to="/login" className="font-medium text-fg underline decoration-border-strong underline-offset-4 hover:decoration-fg">
             {d.common.login}
           </Link>
         </>
