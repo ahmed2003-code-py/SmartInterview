@@ -174,7 +174,10 @@ async function callWhisper(audio: Buffer, mimeType: string, prompt: string, forc
 export const groqWhisper: STTProvider = {
   name: "groq-whisper",
   async transcribe(audio, mimeType, language, ctx) {
-    const prompt = whisperPrompt(language, ctx?.roleSlug, ctx);
+    // Always the Egyptian code-switching prompt, whatever the interview language: measured on the same
+    // audio, an English prompt made Whisper translate Egyptian Arabic answers into English (or drop
+    // them), while the code-switching prompt keeps English answers in English and Arabic in Arabic.
+    const prompt = whisperPrompt("ar", ctx?.roleSlug, ctx);
     const t0 = Date.now();
     const timeoutMs = Math.round(Math.min(30_000, 15_000 + audio.length / 40)); // ~15s + 0.2s per audio second
     let result: VerboseTranscription;
