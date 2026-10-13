@@ -38,7 +38,7 @@ export function AppLayout() {
             ))}
           </nav>
           <div className="ms-auto flex items-center gap-1">
-            {pathname !== "/interviews/new" && (
+            {!["/interviews/new", "/dashboard"].includes(pathname) && (
               <Button asChild size="sm" className="me-2 hidden sm:inline-flex">
                 <Link to="/interviews/new">
                   <Plus className="size-4" />
