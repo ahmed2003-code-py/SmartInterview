@@ -42,6 +42,7 @@ interface VerboseSegment {
 
 interface VerboseTranscription {
   text?: string;
+  language?: string;
   duration?: number;
   segments?: VerboseSegment[];
 }
@@ -102,7 +103,7 @@ const ROLE_TERMS: Record<string, string> = {
   "educational-technology": "LMS, Google Classroom, e-learning",
   "teaching-assistant": "feedback, small groups",
 };
-const COMMON_TERMS = "lesson plan, classroom management, assessment, group work, primary, secondary";
+const COMMON_TERMS = "teaching assistant, lesson plan, classroom management, assessment, group work, primary, secondary";
 
 export function whisperPrompt(language: Lang, roleSlug?: string) {
   const terms = [COMMON_TERMS, roleSlug ? ROLE_TERMS[roleSlug] : ""].filter(Boolean).join(", ");
@@ -111,44 +112,59 @@ export function whisperPrompt(language: Lang, roleSlug?: string) {
     : `This is a student's answer in a practice interview for a teaching job. Terms may include: ${terms}.`;
 }
 
-/** Groq Whisper (whisper-large-v3-turbo). Audio stays in memory and is discarded after the request. */
+async function callWhisper(audio: Buffer, mimeType: string, prompt: string, forceLanguage?: Lang): Promise<VerboseTranscription> {
+  const form = new FormData();
+  form.append("file", new Blob([new Uint8Array(audio)], { type: mimeType }), `answer.${extFor(mimeType)}`);
+  form.append("model", config.stt.groqModel);
+  if (forceLanguage) form.append("language", forceLanguage);
+  form.append("temperature", "0");
+  form.append("response_format", "verbose_json");
+  form.append("prompt", prompt);
+  let res: Response;
+  try {
+    res = await fetchWithRateLimitRetry("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${config.stt.groqApiKey}` },
+      body: form,
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch (err) {
+    console.error("STT network error", err instanceof Error ? err.message : err);
+    throw new HttpError(502, "STT_FAILED", "Could not reach the transcription service");
+  }
+  if (!res.ok) {
+    console.error("STT error", res.status, (await res.text()).slice(0, 300));
+    throw new HttpError(502, "STT_FAILED", "Transcription failed");
+  }
+  return (await res.json()) as VerboseTranscription;
+}
+
+/**
+ * Groq Whisper. Audio stays in memory and is discarded after the request.
+ *
+ * The language is NOT forced: when a student switches language (an English answer in an Arabic
+ * interview, or Arabic in an English one) a forced language makes Whisper translate instead of
+ * transcribe. Auto-detection transcribes faithfully and keeps Arabic/English code-switching
+ * (measured: same accuracy on Egyptian speech, 23/23 English terms kept verbatim). If Whisper
+ * detects something other than Arabic/English (a misdetection), we retry once with the interview
+ * language forced.
+ */
 const groqWhisper: STTProvider = {
   name: "groq-whisper",
   async transcribe(audio, mimeType, language, ctx) {
     const prompt = whisperPrompt(language, ctx?.roleSlug);
     const t0 = Date.now();
-    const form = new FormData();
-    form.append("file", new Blob([new Uint8Array(audio)], { type: mimeType }), `answer.${extFor(mimeType)}`);
-    form.append("model", config.stt.groqModel);
-    form.append("language", language);
-    form.append("temperature", "0");
-    form.append("response_format", "verbose_json");
-    form.append("prompt", prompt);
-
-    let res: Response;
-    try {
-      res = await fetchWithRateLimitRetry("https://api.groq.com/openai/v1/audio/transcriptions", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${config.stt.groqApiKey}` },
-        body: form,
-        signal: AbortSignal.timeout(45_000),
-      });
-    } catch (err) {
-      console.error("STT network error", err instanceof Error ? err.message : err);
-      throw new HttpError(502, "STT_FAILED", "Could not reach the transcription service");
-    }
-    if (!res.ok) {
-      console.error("STT error", res.status, (await res.text()).slice(0, 300));
-      throw new HttpError(502, "STT_FAILED", "Transcription failed");
-    }
-    const result = (await res.json()) as VerboseTranscription;
+    let result = await callWhisper(audio, mimeType, prompt);
+    const detected = (result.language ?? "").toLowerCase();
+    const plausible = !detected || detected.startsWith("arab") || detected.startsWith("engl") || detected === "ar" || detected === "en";
+    if (!plausible) result = await callWhisper(audio, mimeType, prompt, language);
     const text = cleanTranscription(result, prompt);
     if (config.stt.debug) {
       // Metadata only, never the audio or the transcript text.
       const segs = result.segments ?? [];
       const avgLogprob = segs.length ? segs.reduce((a, x) => a + (x.avg_logprob ?? 0), 0) / segs.length : null;
       console.log(
-        `[stt] model=${config.stt.groqModel} lang=${language} mime=${mimeType} bytes=${audio.length} clientSec=${ctx?.durationSec ?? "?"} audioSec=${result.duration?.toFixed(1) ?? "?"} segments=${segs.length} avgLogprob=${avgLogprob?.toFixed(2) ?? "?"} chars=${text.length} rejected=${!text} ms=${Date.now() - t0}`,
+        `[stt] model=${config.stt.groqModel} interviewLang=${language} detected=${detected || "?"}${plausible ? "" : "->forced"} mime=${mimeType} bytes=${audio.length} clientSec=${ctx?.durationSec ?? "?"} audioSec=${result.duration?.toFixed(1) ?? "?"} segments=${segs.length} avgLogprob=${avgLogprob?.toFixed(2) ?? "?"} chars=${text.length} rejected=${!text} ms=${Date.now() - t0}`,
       );
     }
     return text;

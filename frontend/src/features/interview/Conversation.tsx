@@ -1,5 +1,4 @@
-import { useEffect, useRef } from "react";
-import { Pencil, Volume2 } from "lucide-react";
+import { Volume2 } from "lucide-react";
 import { Spinner } from "@/components/ui/spinner";
 import { Waveform } from "./Waveform";
 import { useI18n } from "@/i18n";
@@ -67,75 +66,33 @@ export function AiMessage(props: {
   );
 }
 
-type StudentState = "final" | "sending" | "review" | "recording" | "transcribing";
+type StudentState = "final" | "sending" | "failed" | "recording" | "transcribing";
 
-/** The student's answer. In review it can be corrected inline before sending. */
-export function StudentMessage(props: {
-  state: StudentState;
-  text?: string;
-  recordingTime?: string;
-  editing?: boolean;
-  onEdit?: () => void;
-  onDoneEditing?: () => void;
-  onChange?: (v: string) => void;
-}) {
+/** The student's answer as a message in the conversation. */
+export function StudentMessage(props: { state: StudentState; text?: string; recordingTime?: string }) {
   const { d } = useI18n();
-  const areaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    const el = areaRef.current;
-    if (!props.editing || !el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }, [props.editing, props.text]);
-
   return (
     <div className="flex animate-fade-up justify-end">
       <div
         className={cn(
-          "w-fit max-w-[88%] rounded-lg border px-4 py-3 transition-colors sm:max-w-[80%]",
-          props.state === "review" ? "border-primary/40 bg-surface" : props.state === "recording" ? "border-danger/35 bg-surface" : "border-border bg-surface",
-          props.state === "sending" && "opacity-70",
+          "w-fit max-w-[88%] rounded-lg border bg-surface px-4 py-3 transition-colors sm:max-w-[80%]",
+          props.state === "recording" || props.state === "failed" ? "border-danger/35" : "border-border",
         )}
       >
-        <div className="mb-1 flex items-center justify-between gap-6 text-xs">
-          <span className="text-subtle">{d.room.you}</span>
-          {props.state === "review" &&
-            (props.editing ? (
-              <button type="button" onClick={props.onDoneEditing} className="font-medium text-primary hover:underline">
-                {d.room.doneEditing}
-              </button>
-            ) : (
-              <button type="button" onClick={props.onEdit} className="inline-flex items-center gap-1 text-muted hover:text-fg">
-                <Pencil className="size-3" />
-                {d.room.edit}
-              </button>
-            ))}
-        </div>
-
+        <p className="mb-1 text-xs text-subtle">{d.room.you}</p>
         {props.state === "recording" ? (
           <p className="flex items-center gap-2 text-[15px] text-danger">
             <span className="size-2 animate-pulse rounded-full bg-current" />
             {d.room.states.RECORDING}
-            <span className="tabular-nums text-danger/80">{props.recordingTime}</span>
+            <span className="tabular-nums text-danger/80" dir="ltr">
+              {props.recordingTime}
+            </span>
           </p>
         ) : props.state === "transcribing" ? (
           <p className="flex items-center gap-2 text-[15px] text-muted">
             <Spinner className="size-3.5" />
             {d.room.transcribingMsg}
           </p>
-        ) : props.editing ? (
-          <textarea
-            ref={areaRef}
-            value={props.text}
-            onChange={(e) => props.onChange?.(e.target.value)}
-            dir="auto"
-            maxLength={4000}
-            autoFocus
-            rows={2}
-            className="block w-[min(36rem,70vw)] max-w-full resize-none bg-transparent text-[15px] leading-relaxed outline-none"
-            aria-label={d.room.transcriptLabel}
-          />
         ) : (
           <p className="text-[15px] leading-relaxed whitespace-pre-wrap" dir="auto">
             {props.text}

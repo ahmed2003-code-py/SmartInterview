@@ -6,6 +6,7 @@ import { config } from "../config.js";
 import { requireAuth } from "../middleware/auth.js";
 import { HttpError } from "../middleware/errors.js";
 import { getSTT, type Lang } from "../providers/stt.js";
+import { questionAudio } from "../providers/tts.js";
 import * as interviews from "../services/interviews.js";
 
 export const interviewsRouter = Router();
@@ -96,4 +97,23 @@ interviewsRouter.post("/:id/answers", aiLimiter, async (req, res) => {
 
 interviewsRouter.post("/:id/finish", aiLimiter, async (req, res) => {
   res.json({ interview: await interviews.finishInterview(req.userId!, req.params.id as string) });
+});
+
+// Interviewer voice for Arabic questions. Only stored questions of the student's own interview can
+// be voiced, so this can't be used to synthesize arbitrary text.
+const ttsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 30,
+  keyGenerator: (req) => req.userId ?? "anon",
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "RATE_LIMITED", message: "Too many requests" },
+});
+
+interviewsRouter.get("/:id/questions/:questionId/audio", ttsLimiter, async (req, res) => {
+  const question = await interviews.findOwnedQuestion(req.userId!, req.params.id as string, req.params.questionId as string);
+  if (question.interview.language !== "ar") throw new HttpError(400, "TTS_NOT_USED", "Browser voice is used for this language");
+  const audio = await questionAudio(question.id, question.text);
+  res.set({ "Content-Type": "audio/mpeg", "Cache-Control": "private, max-age=3600", "Content-Length": String(audio.length) });
+  res.send(audio);
 });

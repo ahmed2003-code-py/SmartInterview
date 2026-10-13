@@ -274,3 +274,12 @@ export async function dashboard(userId: string) {
     recent,
   };
 }
+
+export async function findOwnedQuestion(userId: string, interviewId: string, questionId: string) {
+  const question = await prisma.question.findFirst({
+    where: { id: questionId, interviewId, interview: { userId } },
+    select: { id: true, text: true, interview: { select: { language: true } } },
+  });
+  if (!question) throw new HttpError(404, "NOT_FOUND", "Question not found");
+  return question;
+}

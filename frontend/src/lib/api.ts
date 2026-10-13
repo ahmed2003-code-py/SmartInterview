@@ -108,6 +108,7 @@ export interface InterviewSummary {
 
 export interface AppConfig {
   mockAI: boolean;
+  arabicVoice: boolean;
   maxAnswerSeconds: number;
   maxJobDescriptionChars: number;
 }

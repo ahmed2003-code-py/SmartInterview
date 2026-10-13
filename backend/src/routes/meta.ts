@@ -3,11 +3,12 @@ import { config } from "../config.js";
 import { prisma } from "../db/prisma.js";
 import { requireAuth } from "../middleware/auth.js";
 import { dashboard } from "../services/interviews.js";
+import { ttsConfigured } from "../providers/tts.js";
 
 export const metaRouter = Router();
 
 metaRouter.get("/config", (_req, res) => {
-  res.json({ mockAI: config.mockAI, maxAnswerSeconds: config.limits.maxAnswerSeconds, maxJobDescriptionChars: config.limits.maxJobDescriptionChars });
+  res.json({ mockAI: config.mockAI, arabicVoice: ttsConfigured(), maxAnswerSeconds: config.limits.maxAnswerSeconds, maxJobDescriptionChars: config.limits.maxJobDescriptionChars });
 });
 
 metaRouter.get("/roles", async (_req, res) => {

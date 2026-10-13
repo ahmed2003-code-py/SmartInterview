@@ -9,16 +9,20 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { Dialog, DialogClose, DialogContent, DialogTrigger } from "@/components/ui/dialog";
 import { ErrorState } from "@/components/ui/states";
 import { LogoMark } from "@/components/layout/Logo";
-import { LanguageSwitch, ThemeToggle } from "@/components/layout/Preferences";
+import { ThemeToggle } from "@/components/layout/Preferences";
 import { Waveform } from "@/features/interview/Waveform";
 import { AiMessage, InterviewerAvatar, StudentMessage, ThinkingMessage } from "@/features/interview/Conversation";
-import { useSpeech } from "@/hooks/useSpeech";
+import { useInterviewerVoice } from "@/hooks/useInterviewerVoice";
 import { recordingSupported, useRecorder, type Recording, type RecorderError } from "@/hooks/useRecorder";
-import { api, ApiError, type AppConfig, type InterviewDTO } from "@/lib/api";
-import { useI18n } from "@/i18n";
+import { api, ApiError, type AppConfig, type InterviewDTO, type QuestionDTO } from "@/lib/api";
+import { I18nOverride, useI18n } from "@/i18n";
 import { clockTime, cn } from "@/lib/utils";
 
-export type Phase = "READY" | "AI_SPEAKING" | "WAITING_FOR_USER" | "RECORDING" | "TRANSCRIBING" | "REVIEW" | "ANALYZING" | "COMPLETED" | "DONE";
+/**
+ * READY → AI_SPEAKING → WAITING_FOR_USER → RECORDING → TRANSCRIBING → ANALYZING → AI_SPEAKING …
+ * ANSWER_FAILED: the transcript exists but the next question couldn't be prepared (retry reuses it).
+ */
+export type Phase = "READY" | "AI_SPEAKING" | "WAITING_FOR_USER" | "RECORDING" | "TRANSCRIBING" | "ANALYZING" | "ANSWER_FAILED" | "COMPLETED" | "DONE";
 
 interface RoomError {
   message: string;
@@ -28,43 +32,15 @@ interface RoomError {
 const SILENCE_PEAK = 0.012;
 const MIN_VOICED_SEC = 0.4;
 
+/** Loads the interview, then runs the room in the interview's own language (Arabic interview = Arabic RTL room). */
 export default function InterviewRoom() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const location = useLocation();
-  const { d, fmt, lang: uiLang } = useI18n();
-
+  const { d } = useI18n();
   const [interview, setInterview] = useState<InterviewDTO | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [phase, setPhase] = useState<Phase>("READY");
-  const [error, setError] = useState<RoomError | null>(null);
-  const [draft, setDraft] = useState("");
-  const [inputMode, setInputMode] = useState<"voice" | "text">(recordingSupported ? "voice" : "text");
-  const [slowAnalysis, setSlowAnalysis] = useState(false);
-  const [now, setNow] = useState(() => Date.now());
-  const [editing, setEditing] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const startingRef = useRef(false);
-  const autoStartedRef = useRef(false);
 
-  // Refs keep retry callbacks from reading stale values.
-  const interviewRef = useRef<InterviewDTO | null>(null);
-  const draftRef = useRef("");
-  const recordingRef = useRef<Recording | null>(null);
-  const busyRef = useRef(false);
-  interviewRef.current = interview;
-  draftRef.current = draft;
-
-  const language = interview?.language ?? "en";
-  const speech = useSpeech(language);
-  const recorder = useRecorder(config?.maxAnswerSeconds ?? 120);
-
-  const current = interview?.questions.at(-1);
-  const currentQuestion = current && !current.answer ? current : null;
-  const answeredCount = interview?.questions.filter((q) => q.answer).length ?? 0;
-
-  // ---- loading ----
   const load = useCallback(async () => {
     setLoadFailed(false);
     try {
@@ -83,8 +59,79 @@ export default function InterviewRoom() {
 
   useEffect(() => {
     load();
-    api.get<AppConfig>("/config").then(setConfig).catch(() => {});
+    api.get<AppConfig>("/config").then(setConfig).catch(() => setConfig({ mockAI: false, arabicVoice: false, maxAnswerSeconds: 120, maxJobDescriptionChars: 2500 }));
   }, [load]);
+
+  if (loadFailed)
+    return (
+      <div className="grid min-h-dvh place-items-center">
+        <ErrorState onRetry={load} />
+      </div>
+    );
+  if (!interview || !config)
+    return (
+      <div className="grid min-h-dvh place-items-center text-muted">
+        <Spinner />
+      </div>
+    );
+  if (interview.status === "ABANDONED")
+    return (
+      <div className="grid min-h-dvh place-items-center px-4 text-center">
+        <div>
+          <p className="text-muted">{d.room.endedNoReport}</p>
+          <Button asChild className="mt-5">
+            <Link to="/dashboard">{d.room.backToDashboard}</Link>
+          </Button>
+        </div>
+      </div>
+    );
+
+  return (
+    <I18nOverride lang={interview.language}>
+      <Room interview={interview} setInterview={setInterview} reload={load} config={config} />
+    </I18nOverride>
+  );
+}
+
+function Room({
+  interview,
+  setInterview,
+  reload,
+  config,
+}: {
+  interview: InterviewDTO;
+  setInterview: React.Dispatch<React.SetStateAction<InterviewDTO | null>>;
+  reload: () => Promise<InterviewDTO | null>;
+  config: AppConfig;
+}) {
+  const id = interview.id;
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { d, fmt, lang } = useI18n(); // the interview's language
+
+  const [phase, setPhase] = useState<Phase>("READY");
+  const [error, setError] = useState<RoomError | null>(null);
+  const [pending, setPending] = useState<string | null>(null); // transcript being submitted
+  const [typed, setTyped] = useState("");
+  const [inputMode, setInputMode] = useState<"voice" | "text">(recordingSupported ? "voice" : "text");
+  const [slowAnalysis, setSlowAnalysis] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Guards so one recording produces exactly one transcription and one submission.
+  const startingRef = useRef(false);
+  const sttBusyRef = useRef(false);
+  const submitBusyRef = useRef(false);
+  const autoStartedRef = useRef(false);
+  const interviewRef = useRef(interview);
+  interviewRef.current = interview;
+
+  const voice = useInterviewerVoice(interview.language, id, config.arabicVoice);
+  const recorder = useRecorder(config.maxAnswerSeconds);
+
+  const current = interview.questions.at(-1);
+  const currentQuestion = current && !current.answer ? current : null;
+  const answeredCount = interview.questions.filter((q) => q.answer).length;
 
   useEffect(() => {
     if (phase === "COMPLETED" || phase === "DONE") return;
@@ -98,21 +145,28 @@ export default function InterviewRoom() {
     return () => window.clearTimeout(t);
   }, [phase]);
 
+  // Non-blocking notice when the Arabic voice service fails; the interview continues as text.
+  useEffect(() => {
+    if (!voice.notice) return;
+    toast(d.room.voiceFailed);
+    voice.dismissNotice();
+  }, [voice.notice, voice, d.room.voiceFailed]);
+
   // ---- flow ----
   const errorText = (err: unknown, fallback: string) => (err instanceof ApiError && err.code === "NETWORK_ERROR" ? d.room.errors.network : fallback);
 
   const ask = useCallback(
-    async (text: string, after: Phase = "WAITING_FOR_USER") => {
+    async (q: QuestionDTO) => {
       setPhase("AI_SPEAKING");
-      await speech.speak(text);
+      await voice.speak({ id: q.id, text: q.text });
       // Only advance if nothing else (e.g. End interview) changed the phase meanwhile.
-      setPhase((p) => (p === "AI_SPEAKING" ? after : p));
+      setPhase((p) => (p === "AI_SPEAKING" ? "WAITING_FOR_USER" : p));
     },
-    [speech],
+    [voice],
   );
 
   async function finish() {
-    speech.cancel();
+    voice.cancel();
     setError(null);
     setPhase("COMPLETED");
     try {
@@ -131,26 +185,73 @@ export default function InterviewRoom() {
 
   function begin() {
     setError(null);
-    if (currentQuestion) ask(currentQuestion.text);
+    if (currentQuestion) ask(currentQuestion);
     else finish(); // every question answered but the interview was never closed
   }
 
+  /** Sends the transcript to the interviewer AI. Retrying reuses the same text; it never re-records. */
+  async function submit(text: string) {
+    const q = interviewRef.current.questions.at(-1);
+    if (submitBusyRef.current || !text.trim() || !q || q.answer) return;
+    submitBusyRef.current = true;
+    setError(null);
+    setPending(text);
+    setPhase("ANALYZING");
+    try {
+      const res = await api.post<{ interview: InterviewDTO; shouldEndInterview: boolean }>(`/interviews/${id}/answers`, {
+        questionId: q.id,
+        transcript: text.trim(),
+        durationSec: lastDurationRef.current ?? undefined,
+      });
+      setInterview(res.interview);
+      setPending(null);
+      setTyped("");
+      lastDurationRef.current = null;
+      submitBusyRef.current = false;
+      if (res.shouldEndInterview) await finish();
+      else await ask(res.interview.questions.at(-1)!);
+    } catch (err) {
+      submitBusyRef.current = false;
+      if (err instanceof ApiError && (err.code === "ALREADY_ANSWERED" || err.code === "STALE_QUESTION")) {
+        // A duplicate request already handled this answer; resync and carry on.
+        setPending(null);
+        const fresh = await reload();
+        const next = fresh?.questions.at(-1);
+        if (next && !next.answer) await ask(next);
+      } else if (err instanceof ApiError && err.code === "INTERVIEW_CLOSED") {
+        navigate(`/interviews/${id}/report`, { replace: true });
+      } else {
+        setPhase("ANSWER_FAILED");
+        setError({ message: errorText(err, d.room.errors.nextFailed), retry: () => submit(text) });
+      }
+    }
+  }
+  const lastDurationRef = useRef<number | null>(null);
+
   async function transcribe(rec: Recording) {
+    if (sttBusyRef.current) return;
+    sttBusyRef.current = true;
     setError(null);
     setPhase("TRANSCRIBING");
     const form = new FormData();
     form.append("audio", rec.blob, `answer.${rec.blob.type.includes("mp4") ? "m4a" : rec.blob.type.includes("ogg") ? "ogg" : "webm"}`);
     if (Number.isFinite(rec.voicedSec)) form.append("voicedSec", rec.voicedSec.toFixed(2));
     form.append("durationSec", String(rec.durationSec));
+    let transcript: string;
     try {
-      const { transcript } = await api.post<{ transcript: string }>(`/interviews/${id}/transcribe`, form);
-      setDraft(transcript);
-      setPhase("REVIEW");
+      ({ transcript } = await api.post<{ transcript: string }>(`/interviews/${id}/transcribe`, form));
     } catch (err) {
+      sttBusyRef.current = false;
       setPhase("WAITING_FOR_USER");
+      // Nothing is submitted; the student records again (or retries the same audio).
       if (err instanceof ApiError && err.code === "NO_SPEECH") setError({ message: d.room.errors.noSpeech });
       else setError({ message: errorText(err, d.room.errors.sttFailed), retry: () => transcribe(rec) });
+      return;
     }
+    sttBusyRef.current = false;
+    lastDurationRef.current = rec.durationSec;
+    // Show what the system understood, then send it straight away.
+    await submit(transcript);
   }
 
   const recorderMessage: Record<RecorderError, string> = {
@@ -161,22 +262,20 @@ export default function InterviewRoom() {
   };
 
   async function startAnswer() {
-    if ((phase !== "WAITING_FOR_USER" && phase !== "REVIEW") || startingRef.current || recorder.recording) return;
+    if (phase !== "WAITING_FOR_USER" || startingRef.current || recorder.recording) return;
     startingRef.current = true;
     setError(null);
-    setEditing(false);
     const err = await recorder.start().finally(() => (startingRef.current = false));
     if (err) {
       setError({ message: recorderMessage[err], retry: err === "failed" ? startAnswer : undefined });
       if (err !== "failed") setInputMode("text");
       return;
     }
-    setDraft("");
     setPhase("RECORDING");
   }
 
   async function stopAnswer() {
-    const rec = await recorder.stop();
+    const rec = await recorder.stop(); // null for a second Stop click
     if (!rec) return;
     if (rec.durationSec < 1 || rec.blob.size < 1500) {
       setPhase("WAITING_FOR_USER");
@@ -186,50 +285,13 @@ export default function InterviewRoom() {
       setPhase("WAITING_FOR_USER");
       return setError({ message: d.room.errors.noSpeech });
     }
-    recordingRef.current = rec;
     transcribe(rec);
   }
   recorder.setAutoStop(stopAnswer);
 
-  async function submit() {
-    const text = draftRef.current.trim();
-    const q = interviewRef.current?.questions.at(-1);
-    if (busyRef.current || !text || !q || q.answer) return;
-    busyRef.current = true;
-    setError(null);
-    setEditing(false);
-    setPhase("ANALYZING");
-    try {
-      const res = await api.post<{ interview: InterviewDTO; shouldEndInterview: boolean }>(`/interviews/${id}/answers`, {
-        questionId: q.id,
-        transcript: text,
-        durationSec: recordingRef.current?.durationSec,
-      });
-      setInterview(res.interview);
-      setDraft("");
-      recordingRef.current = null;
-      if (res.shouldEndInterview) await finish();
-      else await ask(res.interview.questions.at(-1)!.text);
-    } catch (err) {
-      if (err instanceof ApiError && (err.code === "ALREADY_ANSWERED" || err.code === "STALE_QUESTION")) {
-        // Another tab or a double submit already handled it; resync and carry on.
-        const fresh = await load();
-        const next = fresh?.questions.at(-1);
-        if (next && !next.answer) await ask(next.text);
-      } else if (err instanceof ApiError && err.code === "INTERVIEW_CLOSED") {
-        navigate(`/interviews/${id}/report`, { replace: true });
-      } else {
-        setPhase("REVIEW");
-        setError({ message: errorText(err, d.room.errors.aiFailed), retry: submit });
-      }
-    } finally {
-      busyRef.current = false;
-    }
-  }
-
-  async function repeat() {
-    if (!currentQuestion || (phase !== "WAITING_FOR_USER" && phase !== "REVIEW")) return;
-    ask(currentQuestion.text, phase);
+  function repeat() {
+    if (!currentQuestion || phase !== "WAITING_FOR_USER") return;
+    ask(currentQuestion);
   }
 
   async function endInterview() {
@@ -239,50 +301,29 @@ export default function InterviewRoom() {
 
   // Arriving from setup: the "Start interview" click already counts as a user gesture,
   // so the first question can be shown and spoken right away.
+  // Scheduled after mount settles (and cancelled on unmount) so a dev double-mount can't cancel the first question.
   useEffect(() => {
     const fromSetup = (location.state as { autoStart?: boolean } | null)?.autoStart;
-    if (!interview || autoStartedRef.current || phase !== "READY" || !fromSetup || answeredCount > 0 || !currentQuestion) return;
-    autoStartedRef.current = true;
-    navigate(location.pathname, { replace: true, state: null });
-    begin();
+    if (autoStartedRef.current || phase !== "READY" || !fromSetup || answeredCount > 0 || !currentQuestion) return;
+    const t = window.setTimeout(() => {
+      if (autoStartedRef.current) return;
+      autoStartedRef.current = true;
+      navigate(location.pathname, { replace: true, state: null });
+      begin();
+    }, 0);
+    return () => window.clearTimeout(t);
   });
 
   // Keep the newest part of the conversation in view.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [interview?.questions.length, phase, editing]);
+  }, [interview.questions.length, phase, pending]);
 
   // ---- render ----
-  if (loadFailed)
-    return (
-      <div className="grid min-h-dvh place-items-center">
-        <ErrorState onRetry={load} />
-      </div>
-    );
-  if (!interview)
-    return (
-      <div className="grid min-h-dvh place-items-center text-muted">
-        <Spinner />
-      </div>
-    );
-
-  if (interview.status === "ABANDONED")
-    return (
-      <div className="grid min-h-dvh place-items-center px-4 text-center">
-        <div>
-          <p className="text-muted">{d.room.endedNoReport}</p>
-          <Button asChild className="mt-5">
-            <Link to="/dashboard">{d.room.backToDashboard}</Link>
-          </Button>
-        </div>
-      </div>
-    );
-
-  const roleName = uiLang === "ar" ? interview.role.nameAr : interview.role.nameEn;
+  const roleName = lang === "ar" ? interview.role.nameAr : interview.role.nameEn;
   const questionNumber = Math.min(currentQuestion?.order ?? interview.questions.length, interview.maxQuestions);
   const elapsed = Math.max(0, Math.floor((now - new Date(interview.startedAt).getTime()) / 1000));
-  const maxSeconds = config?.maxAnswerSeconds ?? 120;
   const statusKey = error?.retry && phase !== "AI_SPEAKING" && phase !== "RECORDING" ? "ERROR" : phase === "ANALYZING" && slowAnalysis ? "PREPARING" : phase;
   const done = phase === "DONE";
 
@@ -324,8 +365,7 @@ export default function InterviewRoom() {
             <span className="px-1 text-[13px] text-subtle tabular-nums" dir="ltr">
               {clockTime(elapsed)}
             </span>
-            <div className="hidden items-center lg:flex">
-              <LanguageSwitch compact />
+            <div className="hidden lg:block">
               <ThemeToggle />
             </div>
             {!done && (
@@ -375,7 +415,6 @@ export default function InterviewRoom() {
 
           {interview.questions.map((q) => {
             const isCurrent = q.id === currentQuestion?.id && !done;
-            const showPending = isCurrent && (phase === "RECORDING" || phase === "TRANSCRIBING" || phase === "REVIEW" || (phase === "ANALYZING" && draft));
             return (
               <div key={q.id} className="flex flex-col gap-5">
                 <AiMessage
@@ -384,24 +423,18 @@ export default function InterviewRoom() {
                   followUp={q.kind === "FOLLOW_UP"}
                   current={isCurrent}
                   speaking={isCurrent && phase === "AI_SPEAKING"}
-                  canReplay={phase === "WAITING_FOR_USER" || phase === "REVIEW"}
+                  canReplay={phase === "WAITING_FOR_USER"}
                   onReplay={repeat}
                 />
                 {q.answer ? (
                   <StudentMessage state="final" text={q.answer.transcript} />
-                ) : (
-                  showPending && (
-                    <StudentMessage
-                      state={phase === "RECORDING" ? "recording" : phase === "TRANSCRIBING" ? "transcribing" : phase === "ANALYZING" ? "sending" : "review"}
-                      text={draft}
-                      recordingTime={clockTime(recorder.elapsed)}
-                      editing={editing}
-                      onEdit={() => setEditing(true)}
-                      onDoneEditing={() => setEditing(false)}
-                      onChange={setDraft}
-                    />
-                  )
-                )}
+                ) : isCurrent && phase === "RECORDING" ? (
+                  <StudentMessage state="recording" recordingTime={clockTime(recorder.elapsed)} />
+                ) : isCurrent && phase === "TRANSCRIBING" ? (
+                  <StudentMessage state="transcribing" />
+                ) : isCurrent && pending ? (
+                  <StudentMessage state={phase === "ANSWER_FAILED" ? "failed" : "sending"} text={pending} />
+                ) : null}
               </div>
             );
           })}
@@ -426,10 +459,10 @@ export default function InterviewRoom() {
         </div>
       </div>
 
-      {/* Voice dock */}
+      {/* Voice dock: only the action that makes sense right now */}
       <footer className="shrink-0 border-t border-border bg-bg pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto w-full max-w-[44rem] px-4 py-3 sm:px-6 sm:py-4">
-          {error && (
+          {error && phase !== "ANSWER_FAILED" && (
             <div role="alert" className="mb-3 flex items-start gap-2.5 rounded-md bg-danger-soft px-3 py-2.5 text-sm">
               <AlertCircle className="mt-0.5 size-4 shrink-0 text-danger" />
               <p className="flex-1">{error.message}</p>
@@ -444,21 +477,22 @@ export default function InterviewRoom() {
             phase={phase}
             statusKey={statusKey}
             status={d.room.states[statusKey as keyof typeof d.room.states]}
+            error={error}
             inputMode={inputMode}
             canUseMic={recordingSupported}
-            draft={draft}
-            setDraft={setDraft}
+            typed={typed}
+            setTyped={setTyped}
             elapsed={recorder.elapsed}
-            maxSeconds={maxSeconds}
+            maxSeconds={config.maxAnswerSeconds}
             levels={recorder.levels}
             isResuming={answeredCount > 0}
             resumeText={fmt(d.room.resumeBody, { n: questionNumber })}
-            reportHref={`/interviews/${interview.id}/report`}
-            noTts={!speech.supported}
+            reportHref={`/interviews/${id}/report`}
+            noTts={!voice.supported}
             onBegin={begin}
             onStart={startAnswer}
             onStop={stopAnswer}
-            onSubmit={submit}
+            onSendTyped={() => submit(typed)}
             onToggleMode={() => {
               setError(null);
               setInputMode((m) => (m === "voice" ? "text" : "voice"));
@@ -470,15 +504,15 @@ export default function InterviewRoom() {
   );
 }
 
-/** Bottom bar: the current voice state on one side, the one relevant action on the other. */
 function VoiceDock(props: {
   phase: Phase;
   statusKey: string;
   status: string;
+  error: RoomError | null;
   inputMode: "voice" | "text";
   canUseMic: boolean;
-  draft: string;
-  setDraft: (v: string) => void;
+  typed: string;
+  setTyped: (v: string) => void;
   elapsed: number;
   maxSeconds: number;
   levels: number[];
@@ -489,14 +523,20 @@ function VoiceDock(props: {
   onBegin: () => void;
   onStart: () => void;
   onStop: () => void;
-  onSubmit: () => void;
+  onSendTyped: () => void;
   onToggleMode: () => void;
 }) {
   const { d, fmt } = useI18n();
   const { phase } = props;
   const busy = phase === "TRANSCRIBING" || phase === "ANALYZING" || phase === "COMPLETED";
   const tone =
-    props.statusKey === "ERROR" || phase === "RECORDING" ? "text-danger" : phase === "AI_SPEAKING" ? "text-primary" : phase === "WAITING_FOR_USER" || phase === "REVIEW" || phase === "DONE" ? "text-success" : "text-muted";
+    props.statusKey === "ERROR" || phase === "RECORDING" || phase === "ANSWER_FAILED"
+      ? "text-danger"
+      : phase === "AI_SPEAKING"
+        ? "text-primary"
+        : phase === "WAITING_FOR_USER" || phase === "DONE"
+          ? "text-success"
+          : "text-muted";
 
   const status = (
     <div className="min-w-0 flex-1">
@@ -508,29 +548,27 @@ function VoiceDock(props: {
         ) : (
           <span className={cn("size-2 shrink-0 rounded-full bg-current", phase === "RECORDING" && "animate-pulse")} />
         )}
-        <span className="truncate">{phase === "READY" ? (props.isResuming ? d.room.resumeTitle : d.room.beginTitle) : props.status}</span>
+        <span className="truncate">
+          {phase === "READY" ? (props.isResuming ? d.room.resumeTitle : d.room.beginTitle) : phase === "ANSWER_FAILED" ? props.error?.message ?? d.room.errors.nextFailed : props.status}
+        </span>
       </p>
       <p className="mt-0.5 truncate text-xs text-subtle">
         {phase === "READY"
           ? props.isResuming
             ? props.resumeText
             : d.room.checklist[0]
-          : phase === "RECORDING"
-            ? fmt(d.room.timeLeft, { t: clockTime(Math.max(0, props.maxSeconds - props.elapsed)) })
-            : phase === "WAITING_FOR_USER"
-              ? props.noTts
-                ? d.room.noTts
-                : d.room.checklist[1]
-              : phase === "REVIEW"
-                ? d.room.transcriptHint
-                : busy
-                  ? d.room.analyzingHint
-                  : " "}
+          : phase === "WAITING_FOR_USER"
+            ? props.noTts
+              ? d.room.noTts
+              : d.room.checklist[1]
+            : busy
+              ? d.room.analyzingHint
+              : " "}
       </p>
     </div>
   );
 
-  if (phase === "READY") {
+  if (phase === "READY")
     return (
       <div className="flex items-center gap-4">
         {status}
@@ -539,9 +577,8 @@ function VoiceDock(props: {
         </Button>
       </div>
     );
-  }
 
-  if (phase === "DONE") {
+  if (phase === "DONE")
     return (
       <div className="flex items-center gap-4">
         {status}
@@ -553,9 +590,19 @@ function VoiceDock(props: {
         </Button>
       </div>
     );
-  }
 
-  if (phase === "RECORDING") {
+  if (phase === "ANSWER_FAILED")
+    return (
+      <div className="flex items-center gap-4">
+        {status}
+        <Button size="lg" onClick={props.error?.retry}>
+          <RotateCcw className="size-4" />
+          {d.common.retry}
+        </Button>
+      </div>
+    );
+
+  if (phase === "RECORDING")
     return (
       <div className="flex items-center gap-3 sm:gap-4">
         <div className="shrink-0">
@@ -578,36 +625,17 @@ function VoiceDock(props: {
         </button>
       </div>
     );
-  }
-
-  if (phase === "REVIEW") {
-    return (
-      <div className="flex items-center gap-3 sm:gap-4">
-        {status}
-        {props.canUseMic && props.inputMode === "voice" && (
-          <Button variant="ghost" size="lg" className="px-3" onClick={props.onStart} aria-label={d.room.rerecord}>
-            <RotateCcw className="size-4" />
-            <span className="hidden sm:inline">{d.room.rerecord}</span>
-          </Button>
-        )}
-        <Button size="lg" onClick={props.onSubmit} disabled={!props.draft.trim()}>
-          <Send className="size-4 rtl:-scale-x-100" />
-          {d.room.send}
-        </Button>
-      </div>
-    );
-  }
 
   // Typed answers: fallback when the microphone is unavailable or the student prefers typing.
-  if (phase === "WAITING_FOR_USER" && props.inputMode === "text") {
+  if (phase === "WAITING_FOR_USER" && props.inputMode === "text")
     return (
       <div>
         <div className="flex items-end gap-2 rounded-lg border border-border-strong/80 bg-surface p-2 focus-within:border-primary">
           <textarea
-            value={props.draft}
-            onChange={(e) => props.setDraft(e.target.value)}
+            value={props.typed}
+            onChange={(e) => props.setTyped(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) props.onSubmit();
+              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) props.onSendTyped();
             }}
             placeholder={d.room.typePlaceholder}
             dir="auto"
@@ -617,7 +645,7 @@ function VoiceDock(props: {
             className="max-h-40 min-h-12 flex-1 resize-none bg-transparent px-2 py-1.5 text-[15px] leading-relaxed outline-none"
             aria-label={d.room.transcriptLabel}
           />
-          <Button onClick={props.onSubmit} disabled={!props.draft.trim()} aria-label={d.room.send}>
+          <Button onClick={props.onSendTyped} disabled={!props.typed.trim()} aria-label={d.room.send}>
             <Send className="size-4 rtl:-scale-x-100" />
             <span className="hidden sm:inline">{d.room.send}</span>
           </Button>
@@ -630,26 +658,25 @@ function VoiceDock(props: {
         )}
       </div>
     );
-  }
 
-  // Your turn / interviewer speaking / transcribing / thinking: one mic action, enabled only on your turn.
-  const yourTurn = phase === "WAITING_FOR_USER";
+  // Your turn: one microphone action. Other states show only their status.
   return (
-    <div className="flex items-center gap-3 sm:gap-4">
+    <div className="flex min-h-12 items-center gap-3 sm:gap-4">
       {status}
-      {yourTurn && (
-        <Button variant="ghost" size="icon" className="size-11 shrink-0" onClick={props.onToggleMode} aria-label={d.room.typeInstead}>
-          <Keyboard className="size-[18px]" />
-        </Button>
+      {phase === "WAITING_FOR_USER" && (
+        <>
+          <Button variant="ghost" size="icon" className="size-11 shrink-0" onClick={props.onToggleMode} aria-label={d.room.typeInstead}>
+            <Keyboard className="size-[18px]" />
+          </Button>
+          <button
+            onClick={props.onStart}
+            className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-primary px-5 text-sm font-medium text-primary-fg outline-none transition hover:bg-primary-hover focus-visible:ring-4 focus-visible:ring-primary/30 active:scale-95"
+          >
+            <Mic className="size-[18px]" />
+            {d.room.startAnswer}
+          </button>
+        </>
       )}
-      <button
-        onClick={props.onStart}
-        disabled={!yourTurn}
-        className="inline-flex h-12 shrink-0 items-center gap-2 rounded-full bg-primary px-5 text-sm font-medium text-primary-fg outline-none transition hover:bg-primary-hover focus-visible:ring-4 focus-visible:ring-primary/30 active:scale-95 disabled:pointer-events-none disabled:bg-surface-2 disabled:text-subtle"
-      >
-        <Mic className="size-[18px]" />
-        {d.room.startAnswer}
-      </button>
     </div>
   );
 }

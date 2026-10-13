@@ -45,7 +45,31 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const value = useMemo<I18n>(() => {
+  const value = useMemo<I18n>(() => buildI18n(lang, setLang), [lang, setLang]);
+
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+/**
+ * Renders children in a fixed language (e.g. the interview room follows the interview's language),
+ * temporarily switching the document direction and restoring the user's language on exit.
+ */
+export function I18nOverride({ lang, children }: { lang: Lang; children: ReactNode }) {
+  const parent = useI18n();
+  const value = useMemo<I18n>(() => buildI18n(lang, parent.setLang), [lang, parent.setLang]);
+  useEffect(() => {
+    const el = document.documentElement;
+    el.lang = lang;
+    el.dir = lang === "ar" ? "rtl" : "ltr";
+    return () => {
+      el.lang = parent.lang;
+      el.dir = parent.dir;
+    };
+  }, [lang, parent.lang, parent.dir]);
+  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
+}
+
+function buildI18n(lang: Lang, setLang: (lang: Lang) => void): I18n {
     // Arabic month names with Western digits, consistent with scores elsewhere in the UI.
     const locale = lang === "ar" ? "ar-EG-u-nu-latn" : "en-GB";
     return {
@@ -64,9 +88,6 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         return h ? `${h}h ${m % 60}m` : m ? `${m} min` : `${seconds} sec`;
       },
     };
-  }, [lang, setLang]);
-
-  return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>;
 }
 
 export function useI18n() {

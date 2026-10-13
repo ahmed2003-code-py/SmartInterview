@@ -20,6 +20,13 @@ export const config = {
     groqModel: env.GROQ_STT_MODEL || "whisper-large-v3",
     debug: env.STT_DEBUG === "true" || env.NODE_ENV !== "production",
   },
+  tts: {
+    // ElevenLabs is used for Arabic interviewer questions only (English uses the browser voice).
+    elevenLabsApiKey: env.ELEVENLABS_API_KEY ?? "",
+    // Default: ElevenLabs premade "Matilda" (professional, verified for Arabic, usable on the free plan).
+    voiceId: env.ELEVENLABS_VOICE_ID || "XrExE9yKIg1WjnnlVkGX",
+    modelId: env.ELEVENLABS_MODEL_ID || "eleven_v4_turbo",
+  },
   llm: {
     // Groq's OpenAI-compatible endpoint; overridable for local testing only.
     baseUrl: env.LLM_BASE_URL || "https://api.groq.com/openai/v1",
