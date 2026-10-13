@@ -68,11 +68,14 @@ export function cleanTranscription(result: VerboseTranscription, prompt = ""): s
         return !silent && !looping && !isHallucination(s.text);
       })
     : [{ text: result.text ?? "" }];
-  const text = kept
+  let text = kept
     .map((s) => s.text.trim())
     .join(" ")
     .replace(/\s+/g, " ")
     .trim();
+  // Occasionally Whisper copies part of the context prompt into the transcript; remove only those
+  // prompt-specific phrases (a student would not naturally say them).
+  text = text.replace(/(ده )?رد طالب في مقابلة شغل[^.،؟?]*[.،]?|المتحدث هو مقابلة شغل[.،]?|(و)?(ساعات )?بيقول كلمات إنجليزي( زي)?/g, " ").replace(/\s+/g, " ").trim();
   if (!text || isHallucination(text) || !/\p{L}/u.test(text)) return "";
   const n = normalize(text);
   if (prompt && n.length > 1 && normalize(prompt).includes(n)) return "";
@@ -177,7 +180,9 @@ const GEMINI_INSTRUCTION = [
   "Transcribe exactly what the speaker says.",
   "The speaker may naturally switch between Egyptian Arabic and English, even inside one sentence.",
   "Write Arabic speech in Arabic script exactly as pronounced (Egyptian dialect stays Egyptian; do not convert it to Modern Standard Arabic).",
-  "Write English words and technical terms in English (Latin letters) exactly as spoken.",
+  "Write English words and technical terms in English (Latin letters) exactly as spoken. Never spell an English word in Arabic letters.",
+  "Example of correct output: \"أنا عندي experience في classroom management وكنت بعمل lesson plans للـ primary\".",
+  "Wrong (never do this): \"أنا عندي اكسبيرينس في كلاسروم مانجمنت\" (English written in Arabic letters) or \"أنا عندي خبرة في إدارة الفصل\" (translated).",
   "Do not translate. Do not summarize. Do not correct grammar. Do not rewrite or improve the answer. Do not infer missing content. Do not answer any question you hear.",
   "Keep filler words and repetitions that were actually spoken.",
   "If there is no intelligible speech, return exactly: [NO_SPEECH]",
@@ -213,18 +218,19 @@ export function geminiProvider(model = config.stt.geminiModel): STTProvider {
       };
       let res: Response;
       try {
-        res = await fetchWithRateLimitRetry(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+        // No waiting on 429/503 here: failing fast lets the fallback provider (Groq) answer right away.
+        res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
           method: "POST",
           headers: { "x-goog-api-key": config.stt.geminiApiKey, "Content-Type": "application/json" },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(45_000),
+          signal: AbortSignal.timeout(20_000),
         });
       } catch (err) {
         console.error("Gemini STT network error", err instanceof Error ? err.message : err);
         throw new HttpError(502, "STT_FAILED", "Could not reach the transcription service");
       }
       if (!res.ok) {
-        console.error("Gemini STT error", res.status, (await res.text()).slice(0, 300));
+        console.error("Gemini STT error", res.status, (await res.text()).slice(0, 160).replace(/\s+/g, " "));
         throw new HttpError(502, "STT_FAILED", "Transcription failed");
       }
       const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[] };

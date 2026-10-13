@@ -88,9 +88,8 @@ export function turnPrompt(
     user: [
       jd(ctx),
       "",
-      `Topics you planned: ${ctx.topics.join(", ")}`,
-      `Topics already discussed: ${covered}`,
-      `Planned topics not discussed yet: ${uncovered.join(", ") || "(none)"}. Questions left after this one: ${Math.max(0, remaining)}.`,
+      `Areas you might explore (a loose guide, NOT a script or an order to follow): ${ctx.topics.join(", ")}`,
+      `Already discussed: ${covered}. Not yet: ${uncovered.join(", ") || "(none)"}. Questions left after this one: ${Math.max(0, remaining)}.`,
       "",
       "Conversation so far:",
       transcript,
@@ -98,19 +97,19 @@ export function turnPrompt(
       `Your current question (#${questionNumber} of max ${ctx.maxQuestions}, ${currentKind === "FOLLOW_UP" ? "a follow-up" : "a main question"}): ${question}`,
       `<candidate_answer>\n${answer}\n</candidate_answer>`,
       "",
-      "TASK 1 - Silently evaluate ONLY this answer. Score each criterion 1-10 for the selected level:",
-      "relevance (answers what was asked), clarity (structure, easy to follow), communication (professional, complete expression), subjectKnowledge (correct knowledge of the subject and its teaching), educationalReasoning (sound pedagogical justification and student focus).",
-      "Be fair and consistent: empty, off-topic or 'I don't know' = 1-3; typical acceptable = 5-6; specific with a real example = 8-9; 10 is rare.",
-      "'feedback': 1-2 specific, constructive sentences for the final report (never spoken now). 'suggestedAnswer': a model answer outline in 2-4 sentences.",
-      "",
-      "TASK 2 - Respond like a real interviewer.",
-      "Decide:",
+      "YOUR NEXT TURN - you are having a real conversation, not reading a list of questions.",
+      "1) LISTEN. Pick the most important or most interesting thing the candidate actually said in THIS answer: a concrete claim, example, method, term, or a gap/contradiction. Copy it as 'anchor': a short EXACT quote (max ~10 words) from <candidate_answer>.",
+      "2) RESPOND to it in 'reaction' (max ~18 words): comment on the substance of what they said, like a real interviewer would (e.g. note why it matters, what is missing, or connect it to the classroom). Mention the specific thing, not a generic phrase. Never \"Thanks for your answer\", \"Great answer\", \"I see\". Never grade out loud.",
+      `   Do not start the reaction with any of these words you already used: ${usedOpenings}.`,
+      "3) DECIDE:",
       mustMoveOn
-        ? "- You already followed up twice in a row on this topic: decision MUST be NEXT_TOPIC."
-        : "- FOLLOW_UP (preferred when useful): the answer was vague or generic, had no concrete example, left something important out, or mentioned an interesting detail worth exploring. A follow-up MUST be anchored in something specific the candidate just said: refer to it (\"You mentioned you moved him to the front row...\") and ask what happened next, why they chose it, what they would do if it did not work, or for a concrete example.",
-      "- NEXT_TOPIC: the answer was specific and complete, or the topic is exhausted. Choose a planned topic not yet discussed. You may connect it to something they said earlier.",
-      uncovered.length && remaining > 0 && remaining <= uncovered.length ? "- Few questions are left for the undiscussed topics: prefer NEXT_TOPIC now." : "",
-      remaining <= 0 ? "- This was the last allowed question: decision MUST be FINISH and nextQuestion null." : `- FINISH only if every planned topic is well covered (${remaining} question(s) remain).`,
+        ? "   - You already followed up twice on this thread: decision MUST be NEXT_TOPIC, but bridge from the anchor (\"You mentioned X... that brings me to...\")."
+        : "   - FOLLOW_UP (the default): dig into the anchor: ask how exactly, why, what happened next, what if it fails, ask for a real example, or challenge a weak point. This is what makes it feel like a real interview.",
+      "   - NEXT_TOPIC only when the answer was already specific and complete, or the thread is exhausted. Even then, bridge from something they said; never jump to an unrelated question just because it is next in your list.",
+      remaining <= 0 ? "   - This was the last allowed question: decision MUST be FINISH and nextQuestion null." : `   - FINISH only if the important areas are well covered (${remaining} question(s) remain).`,
+      "   - If the candidate gave almost nothing or said they don't know: reassure them in a few words and ask a simpler, concrete version as a small classroom scenario (FOLLOW_UP).",
+      "   - If the answer was off-topic: briefly acknowledge what they said and steer back to the question.",
+      "4) ASK in 'nextQuestion': ONE short spoken question (no second question, no list of options) that clearly builds on the anchor or bridges from it. Never repeat or rephrase an earlier question.",
       ...(ctx.languageMode === "smart"
         ? [
             "",
@@ -124,13 +123,13 @@ export function turnPrompt(
             `- 'feedback' and 'suggestedAnswer' stay in ${ctx.language === "ar" ? "Arabic" : "English"} (the report language).`,
           ]
         : []),
-      "If the candidate said they don't know or gave almost nothing: reassure them briefly and ask a simpler, concrete version as a small classroom scenario (a FOLLOW_UP), unless you must move on.",
-      "Write two things:",
-      "- 'reaction': what you say first, at most ~12 words, reacting to THIS answer specifically (a detail they mentioned, a short neutral acknowledgement, or a transition). Do not praise every answer and never grade out loud. May be null occasionally.",
-      `  You have already started turns with: ${usedOpenings}. Do NOT start the reaction with any of these words again (e.g. no second \"أفهم\" / \"ممتاز\" / \"I see\").`,
-      "- 'nextQuestion': ONE short, natural spoken question (no second question, no list of options, never a repeat or rephrase of an earlier question).",
       "",
-      `Return JSON: {"scores": {"relevance": n, "clarity": n, "communication": n, "subjectKnowledge": n, "educationalReasoning": n}, "feedback": string, "suggestedAnswer": string, "decision": "FOLLOW_UP"|"NEXT_TOPIC"|"FINISH", "topic": string|null, "reaction": string|null, "nextQuestion": string|null${ctx.languageMode === "smart" ? ', "responseLanguage": "ar"|"en"|"mixed", "languageSwitchReason": string' : ""}}`,
+      "THEN, silently EVALUATE this answer for the report (never mention scores in your turn). Score each criterion 1-10 for the selected level:",
+      "relevance (answers what was asked), clarity (structure, easy to follow), communication (professional, complete expression), subjectKnowledge (correct knowledge of the subject and its teaching), educationalReasoning (sound pedagogical justification and student focus).",
+      "Be fair and consistent: empty, off-topic or 'I don't know' = 1-3; typical acceptable = 5-6; specific with a real example = 8-9; 10 is rare.",
+      "'feedback': 1-2 specific, constructive sentences for the final report. 'suggestedAnswer': a model answer outline in 2-4 sentences.",
+      "",
+      `Return JSON in this order: {"anchor": string, "reaction": string|null, "decision": "FOLLOW_UP"|"NEXT_TOPIC"|"FINISH", "topic": string|null, "nextQuestion": string|null${ctx.languageMode === "smart" ? ', "responseLanguage": "ar"|"en"|"mixed", "languageSwitchReason": string' : ""}, "scores": {"relevance": n, "clarity": n, "communication": n, "subjectKnowledge": n, "educationalReasoning": n}, "feedback": string, "suggestedAnswer": string}`,
     ]
       .filter((line) => line !== "")
       .join("\n"),

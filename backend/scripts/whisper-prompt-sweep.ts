@@ -8,10 +8,9 @@ import { cleanTranscription } from "../src/providers/stt.js";
 
 const PROMPTS: Record<string, string> = {
   current: "ده رد طالب في مقابلة شغل لوظيفة مدرس، بيتكلم بالعامية المصرية وساعات بيقول كلمات إنجليزي زي teaching assistant, lesson plan, classroom management, assessment, group work, primary, secondary.",
-  none: "",
+  // Vocabulary only: nothing sentence-like that Whisper could "continue" into the transcript.
+  vocab: "teaching assistant, lesson plan, classroom management, assessment, group work, primary, secondary, differentiation, الحصة، الطلبة، المدرسة، المنهج",
   // Whisper treats the prompt as preceding transcript: show the code-switched style itself.
-  example:
-    "أنا اشتغلت teaching assistant وكان عندي experience في classroom management، وكنت بعمل lesson plans للـ primary والـ secondary، وبستخدم assessment و differentiation.",
 };
 const manifestPath = process.argv[2];
 const items = (JSON.parse(readFileSync(manifestPath, "utf8")) as { name: string; category: string; ref: string; file: string }[]).filter(
@@ -63,7 +62,7 @@ for (const item of items) {
     s.k += k;
     s.n += n;
     // Leak = prompt-only words (descriptive phrases) appearing in the transcript.
-    if (/بيقول كلمات|كلمات إنجليزي|مقابلة شغل/.test(text)) s.leaks++;
+    if (/بيقول كلمات|كلمات إنجليزي|مقابلة شغل|المتحدث|رد طالب/.test(text)) s.leaks++;
     console.log(`  ${name.padEnd(8)}: ${text}   [CER ${(c * 100).toFixed(0)}%${n ? ` EN ${k}/${n}` : ""}]`);
   }
 }

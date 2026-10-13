@@ -21,7 +21,8 @@ const TurnSchema = z.object({
   suggestedAnswer: text(1200),
   decision: z.enum(["FOLLOW_UP", "NEXT_TOPIC", "FINISH"]),
   topic: z.string().trim().max(80).nullish().transform((v) => v || null),
-  reaction: z.string().trim().max(200).nullish().transform((v) => v || null),
+  anchor: z.string().trim().max(300).nullish().catch(null),
+  reaction: z.string().trim().max(240).nullish().transform((v) => v || null),
   responseLanguage: z.enum(["ar", "en", "mixed"]).nullish().catch(null),
   languageSwitchReason: z.string().max(40).nullish().catch(null),
   nextQuestion: z.string().trim().max(400).nullish().transform((v) => v || null),
@@ -65,7 +66,7 @@ export async function planInterview(ctx: InterviewContext): Promise<PlanResult> 
 }
 
 async function llmTurn(input: TurnInput, retryNote?: string): Promise<TurnResult> {
-  const { reaction, responseLanguage, languageSwitchReason: _r, ...r } = await ask(
+  const { reaction, responseLanguage, languageSwitchReason: _r, anchor: _a, ...r } = await ask(
     TurnSchema,
     turnPrompt(input.ctx, input.history, input.question, input.currentKind, input.answer, input.questionNumber, input.consecutiveFollowUps, {
       recent: input.recentLanguages,
