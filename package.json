@@ -1,0 +1,15 @@
+{
+  "name": "smartinterview",
+  "private": true,
+  "description": "AI Interview Simulator - graduation project",
+  "scripts": {
+    "setup": "npm install && npm install --prefix backend && npm install --prefix frontend && node scripts/setup.mjs",
+    "dev": "concurrently -n api,web -c blue,magenta \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
+    "build": "npm run build --prefix frontend && npm run build --prefix backend",
+    "start": "cd backend && NODE_ENV=production node dist/server.js",
+    "db:demo": "npm run db:seed --prefix backend -- --demo"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.5"
+  }
+}

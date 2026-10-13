@@ -255,7 +255,7 @@ export default function InterviewRoom() {
   const questionNumber = currentQuestion?.order ?? interview.questions.length;
   const elapsed = Math.max(0, Math.floor((now - new Date(interview.startedAt).getTime()) / 1000));
   const maxSeconds = config?.maxAnswerSeconds ?? 120;
-  const statusKey = error && phase !== "AI_SPEAKING" && phase !== "RECORDING" ? "ERROR" : phase === "ANALYZING" && slowAnalysis ? "PREPARING" : phase;
+  const statusKey = error?.retry && phase !== "AI_SPEAKING" && phase !== "RECORDING" ? "ERROR" : phase === "ANALYZING" && slowAnalysis ? "PREPARING" : phase;
   const isResuming = answeredCount > 0;
 
   return (

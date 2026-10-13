@@ -35,4 +35,5 @@ app.use(errorHandler);
 
 app.listen(config.port, () => {
   console.log(`API on http://localhost:${config.port}  (MOCK_AI=${config.mockAI})`);
+  if (!config.mockAI && !config.llm.apiKey) console.warn("Warning: MOCK_AI=false but no GROQ_API_KEY / LLM_API_KEY is set. AI requests will fail.");
 });
