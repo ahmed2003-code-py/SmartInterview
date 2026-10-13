@@ -3,7 +3,7 @@
 ## Must fix before the graduation demo
 - **Rehearse once with a real phone microphone** on production, in Arabic and in mixed Arabic/English. All automated voice tests used real speech recordings injected into the browser, not a live microphone.
 - **AI free-tier quotas.**
-  - Gemini speech-to-text: 20 requests per day. After that, Groq Whisper is used automatically: faster, but less accurate on Egyptian Arabic.
+  - Gemini speech-to-text: 20 requests per day. After that, Groq Whisper is used automatically: faster, but less accurate on Egyptian Arabic, and on long answers it sometimes writes dialect as formal Arabic (seen on a 38 s answer in the final production test).
   - Groq interviewer model: 200K tokens per day. After that, a smaller fallback model is used automatically.
   - Avoid heavy testing on demo day, or use a paid key.
 
