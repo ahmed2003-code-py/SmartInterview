@@ -212,7 +212,7 @@ export default function Setup() {
       });
       navigate(`/interviews/${interview.id}`, { state: { autoStart: true } });
     } catch (err) {
-      const msg = err instanceof ApiError && err.code === "NETWORK_ERROR" ? d.room.errors.network : err instanceof ApiError && err.code === "AI_FAILED" ? d.room.errors.aiFailed : d.room.errors.generic;
+      const msg = err instanceof ApiError && err.code === "NETWORK_ERROR" ? d.room.errors.network : err instanceof ApiError && err.code === "AI_FAILED" ? d.setup.startFailed : d.room.errors.generic;
       toast.error(msg, { action: { label: d.common.retry, onClick: start } });
       setBusy(false);
     }

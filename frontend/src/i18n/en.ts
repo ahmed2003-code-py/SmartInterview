@@ -182,6 +182,7 @@ export const en = {
     questions: "{n} questions",
     summary: "Your interview",
     start: "Start interview",
+    startFailed: "Couldn't prepare your interview right now. Try again in a moment.",
     starting: "Preparing your interview…",
     micNote: "You'll answer by voice. Audio isn't stored.",
     chooseRole: "Choose a role to start",

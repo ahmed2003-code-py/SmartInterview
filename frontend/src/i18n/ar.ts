@@ -184,6 +184,7 @@ export const ar: Dict = {
     questions: "{n} أسئلة",
     summary: "مقابلتك",
     start: "ابدأ المقابلة",
+    startFailed: "تعذر تجهيز المقابلة الآن. حاول مرة أخرى بعد قليل.",
     starting: "جارٍ تجهيز المقابلة…",
     micNote: "ستجيب بصوتك، ولا يتم حفظ الصوت.",
     chooseRole: "اختر وظيفة للبدء",
