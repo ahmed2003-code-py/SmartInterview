@@ -81,10 +81,17 @@ export function useInterviewerVoice(interviewId: string | undefined, arabicVoice
           window.clearTimeout(safety);
           safety = window.setTimeout(done, (Number.isFinite(a.duration) ? a.duration : 45) * 1000 + 3000);
         };
+        // Never wait forever for the stream to START either (stalled network without an error event):
+        // after 10s give up on the remote voice; the question continues as browser voice / text.
+        safety = window.setTimeout(() => {
+          // Reject first (the promise settles as a failure → fallback), then stop the stalled audio.
+          reject(Object.assign(new Error("tts-timeout"), { remote: true }));
+          if (audioRef.current === a) stopAudio();
+        }, 10_000);
         a.play().catch((err) => reject(err));
       });
     },
-    [interviewId, onVoiceStart],
+    [interviewId, onVoiceStart, stopAudio],
   );
 
   /** Speaks a question. Always resolves, even when no voice is available. */

@@ -4,7 +4,7 @@ import { config, QUESTION_COUNTS, type InterviewLength } from "../config.js";
 import { HttpError } from "../middleware/errors.js";
 import { evaluateTurn, planInterview, writeReport } from "../ai/interviewer.js";
 import { CRITERIA, type Criteria, type InterviewContext, type SpokenLanguage } from "../ai/types.js";
-import { arabicShare, detectLanguageRequest } from "../ai/language.js";
+import { arabicShare, detectLanguageRequest, scriptLanguage } from "../ai/language.js";
 import { backgroundText } from "./profileCv.js";
 
 const MAX_DURATION_SEC = 2 * 60 * 60;
@@ -172,7 +172,8 @@ export async function createInterview(
       cvProfile,
       topics: plan.topics,
       isMock: config.mockAI,
-      questions: { create: { order: 1, text: plan.firstQuestion.text, language: input.language, kind: "MAIN", topic: plan.firstQuestion.topic } },
+      // The language actually used (by script), so the voice and labels match the text.
+      questions: { create: { order: 1, text: plan.firstQuestion.text, language: languageMode === "smart" ? scriptLanguage(plan.firstQuestion.text) : input.language, kind: "MAIN", topic: plan.firstQuestion.topic } },
     },
     include: detailInclude,
   });

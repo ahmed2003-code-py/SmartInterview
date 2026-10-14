@@ -50,15 +50,18 @@ async function request(model: string, messages: ChatMessage[], maxTokens: number
 /**
  * Calls an OpenAI-compatible chat API in JSON mode and returns the parsed object.
  * If the main model is rate-limited (e.g. Groq's free daily token budget) or failing, the fallback
- * model (separate budget on Groq) answers instead, so the interview keeps going.
+ * models (separate budgets on Groq) answer instead, so the interview keeps going.
  */
 export async function chatJSON(messages: ChatMessage[], maxTokens: number, effort: "low" | "medium" = "low"): Promise<unknown> {
   const t0 = Date.now();
-  let usedModel = config.llm.model;
-  let res = await request(config.llm.model, messages, maxTokens, effort);
-  if (!res && config.llm.fallbackModel && config.llm.fallbackModel !== config.llm.model) {
-    usedModel = config.llm.fallbackModel;
-    res = await request(usedModel, messages, maxTokens, effort);
+  // Main model, then fallbacks with separate quotas (Groq limits are per model).
+  const models = [...new Set([config.llm.model, config.llm.fallbackModel, config.llm.lastResortModel].filter(Boolean))];
+  let usedModel = models[0];
+  let res: Response | null = null;
+  for (const model of models) {
+    usedModel = model;
+    res = await request(model, messages, maxTokens, effort);
+    if (res) break;
   }
   if (!res || !res.ok) throw new HttpError(502, "AI_FAILED", "The AI service returned an error");
   const data = (await res.json()) as { choices?: { message?: { content?: string } }[]; usage?: { prompt_tokens?: number; completion_tokens?: number } };

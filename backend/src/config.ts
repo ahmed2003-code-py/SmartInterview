@@ -38,6 +38,8 @@ export const config = {
     model: env.LLM_MODEL || "openai/gpt-oss-120b",
     // Used when the main model is rate-limited or failing (Groq limits are per model).
     fallbackModel: env.LLM_FALLBACK_MODEL || "openai/gpt-oss-20b",
+    // Last resort when both GPT-OSS models are out of their (separate) daily quotas on the free tier.
+    lastResortModel: env.LLM_LAST_RESORT_MODEL ?? "qwen/qwen3.8-27b",
   },
   limits: {
     maxAudioBytes: 8 * 1024 * 1024,

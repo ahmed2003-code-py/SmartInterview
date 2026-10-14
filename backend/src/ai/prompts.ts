@@ -68,10 +68,15 @@ export function planPrompt(ctx: InterviewContext) {
       jd(ctx),
       "",
       `This interview has at most ${ctx.maxQuestions} questions, follow-ups included.`,
+      ctx.languageMode === "smart"
+        ? `The candidate chose to START in ${ctx.language === "ar" ? "Arabic" : "English"}: write the greeting and the first question in ${ctx.language === "ar" ? "Arabic" : "English"} (later turns follow the candidate's language).`
+        : "",
       `1) List ${Math.max(2, Math.round(ctx.maxQuestions / 2))} distinct competency topics you want to explore, prioritising skills emphasised in the job description if there is one. Topic names in the interview language.`,
       "2) Write your opening line as a real interviewer would start: a short, warm greeting (one sentence, no time-of-day phrase like \"good morning\" / \"صباح الخير\"), then ONE easy opening question that lets the candidate introduce themselves in relation to this role (and the job description, if any).",
       `Return JSON: {"topics": string[], "firstQuestion": {"topic": string, "text": string}}. "text" contains the greeting and the question.`,
-    ].join("\n"),
+    ]
+      .filter((l, i) => l !== "" || i === 1)
+      .join("\n"),
   };
 }
 
