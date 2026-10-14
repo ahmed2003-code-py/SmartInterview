@@ -67,6 +67,10 @@ Groq stays primary: it keeps English terms in English, it's 3.5× faster, and th
 
 **Any role (custom roles):** the setup combobox suggests common roles (education first, plus a few others such as Software Engineer or Accountant) but accepts any typed role, in Arabic or English, plus an optional free-form specialization. A custom role is stored exactly as typed (`Interview.roleTitle`) and shown everywhere (room, report, history, dashboard). The interviewer persona follows the field: a school principal for education roles, a hiring manager for others, and an interviewer from the same field for custom roles. Role and specialization text are treated as untrusted input.
 
+**Profile CV (optional):** a CV uploaded on the Profile page is turned into validated structured fields (role, education, experience, skills…). The student reviews them before anything is applied: empty fields can be filled, existing values are kept by default. New interviews use, in order: an interview-specific CV, the profile CV, or the confirmed profile background. Only the extracted facts are stored; the file never is.
+
+**Tests:** `cd backend && npm test` (Vitest + Supertest against the local Postgres, AI mocked), and `cd frontend && npm run test:e2e` (smoke path against a running local stack).
+
 **CV personalization (optional):** on the setup page the student can upload a CV (PDF, DOCX or TXT, up to 5 MB). The file is read in memory, condensed into a short profile (education, experience, skills, with no contact details), and only that profile is stored with the interview. The original file and raw text are never stored or logged. CV and job-description text are treated as untrusted data. The interviewer uses the CV for one or two natural questions; the rest stay on the role and the job.
 
 **Report language:** Arabic interview → Arabic report. English interview → English report. Smart interview → the language that dominates the student's answers. The whole report, labels included, renders in that language and direction.

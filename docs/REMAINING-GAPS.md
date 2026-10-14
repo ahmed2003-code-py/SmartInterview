@@ -1,16 +1,16 @@
 # Remaining gaps
 
-## Must fix before the graduation demo
+## Must do before the graduation demo
 - **Rehearse once with a real phone microphone** on production, in Arabic and in mixed Arabic/English. All automated voice tests used real speech recordings injected into the browser, not a live microphone.
-- **AI free-tier quotas.**
-  - Gemini speech-to-text: 20 requests per day. After that, Groq Whisper is used automatically: faster, but less accurate on Egyptian Arabic, and on long answers it sometimes writes dialect as formal Arabic (seen on a 38 s answer in the final production test).
-  - Groq interviewer model: 200K tokens per day. After that, a smaller fallback model is used automatically.
-  - Avoid heavy testing on demo day, or use a paid key.
+- **Free-tier AI quotas** (external, no code fix):
+  - Speech-to-text: Gemini allows 20 requests per day, then Groq Whisper takes over. Whisper is faster but less accurate on Egyptian Arabic, and on long answers it sometimes writes dialect as formal Arabic.
+  - Interviewer: `gpt-oss-120b` and `gpt-oss-20b` have separate daily token limits, then a last-resort model (`qwen/qwen3.8-27b`) takes over. It works in Arabic and English, but its scores can be slightly generous.
+  - Avoid heavy testing on demo day, or use a paid Groq or Gemini key.
 
 ## Nice to have later
-- Live captions on phones: currently desktop Chrome and Edge only. Mobile browsers either beep on every recognition restart (Android) or compete with the recorder for the microphone (iOS).
-- Automated tests in the repository with CI. The current Playwright checks live outside the repository.
-- Password reset by email. This needs an email service; changing the password while logged in works.
+- Live captions on phones (currently desktop Chrome and Edge only). Mobile browsers either beep on every recognition restart (Android) or compete with the recorder for the microphone (iOS).
+- Password reset by email (needs an email service). Changing the password while logged in works.
+- CI to run `npm test` and `npm run test:e2e` automatically.
 
 ## Intentionally out of scope
-Admin panel, payments, social features, video interviews, AI avatars, CV builder, gamification, notifications center, extra infrastructure (Redis, queues, microservices).
+Admin panel, payments, social features, video interviews, AI avatars, CV builder, gamification, notification center, extra infrastructure.

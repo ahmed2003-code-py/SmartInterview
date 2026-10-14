@@ -12,7 +12,7 @@ SmartInterview is a voice interview practice product. A student picks any role (
 - **Frontend:** React 19, Vite, TypeScript, Tailwind v4, Radix primitives, Motion (animation engine lazy-loaded), sonner toasts.
 - **Backend:** Express 5, TypeScript, Zod validation, Prisma 6, PostgreSQL. JWT in an httpOnly cookie.
 - **AI:**
-  - Interviewer and reports: Groq `openai/gpt-oss-120b`, falling back to `gpt-oss-20b`.
+  - Interviewer and reports: Groq `openai/gpt-oss-120b`, falling back to `gpt-oss-20b`, then `qwen/qwen3.8-27b` (each model has its own free quota).
   - Speech-to-text: Gemini `gemini-2.5-flash` (primary) and Groq `whisper-large-v3` (fallback).
   - Voices: ElevenLabs for Arabic questions, the browser voice for English questions.
 - **Deployment:** a single Railway service serves `/api` and the built frontend.
@@ -27,6 +27,14 @@ Register → edit profile → settings → dashboard → new interview (custom r
 - Password reset by email is **OUT OF SCOPE**: there is no email service.
 
 ## 5. Profile — COMPLETE
+**Primary CV on the profile:**
+- Upload, replace, remove, and retry when extraction failed.
+- The file is checked by its bytes and capped at 5 MB.
+- Text is extracted in memory and turned into validated structured fields: name, headline, current/target role, specialization, experience level, education, experience, skills, projects, certifications, languages.
+- A review dialog lets the user choose. Empty profile fields default to the CV; values the user already entered are kept by default and are never silently overwritten. Values can be edited and items removed before applying.
+- Removing the CV deletes its extraction and summary; fields the user applied stay.
+- An optional first-run prompt ("Personalize your practice") can be dismissed for good.
+
 `/profile`:
 - Photo: upload, change, remove. The browser resizes it to 256 px. The server checks the image type from its own bytes (JPG/PNG/WebP) and caps size at 300 KB. It is stored in Postgres, so no extra storage service.
 - Name, headline, short bio, target role (same searchable role picker), specialization, experience level.
@@ -57,6 +65,13 @@ Register → edit profile → settings → dashboard → new interview (custom r
 - Defaults come, in priority order, from a Practice again link, then the profile, then the settings.
 
 ## 9. CV / job description personalization — COMPLETE
+Interview context priority, decided on the server:
+1. A CV uploaded for this interview.
+2. The profile CV (setup shows "Using your profile CV", with options to use a different one or none).
+3. The background the user confirmed on the profile.
+
+The current interview's role, specialization and job description are always used as given. The interviewer is told not to keep repeating "according to your CV".
+
 - CV (PDF/DOCX/TXT, up to 5 MB, type checked from file bytes) is read in memory and condensed to a profile of up to 1,500 characters with no contact details. Only that profile is stored; the file and raw text are never stored or logged.
 - The job description is optional, up to 2,500 characters.
 - Both are untrusted data wrapped in tags in prompts; instructions inside them are ignored.
@@ -140,10 +155,12 @@ Voices: ElevenLabs for Arabic, the browser voice for English. "Read questions al
 - `MOCK_AI=false`, health check `/api/health` returns ok.
 - Migrations run on start with `prisma migrate deploy`.
 
-## 21. Test coverage — PARTIAL
-- **Automated browser checks** (Playwright scripts used during development): the robustness suite, room E2E in Arabic and English, the production journey, visual and overflow sweeps, and API tests for the profile, preferences and access boundaries.
-- **Not in the repository:** there is no unit-test suite and no CI. The scripts live outside the repository.
-- **Real microphone:** recordings were injected into the browser from real speech files, so a final check with a real microphone on a phone is still recommended.
+## 21. Test coverage — COMPLETE (for high-risk logic; see FINAL-QA-REPORT.md)
+- **In the repository:**
+  - `backend/test` (Vitest + Supertest, `npm test`): 31 tests. Score bounds, report language, language-switch detection, CV schema and merge rules, profile and preference validation, STT fallback/hedge/timeout, auth, password change, cross-user isolation, profile persistence, avatar and CV file validation, CV priority, interview validation, duplicate-answer prevention, exact length, dashboard numbers.
+  - `frontend/e2e/smoke.mjs` (`npm run test:e2e`): register → settings default → custom-role interview → report → history → logout, with mock AI.
+- **Run during QA (outside the repository):** the robustness and resilience suites, the production journeys, visual sweeps and AI behaviour checks.
+- **Not automated:** a real phone microphone (human check).
 
 ## 22. Known limitations
 See `docs/REMAINING-GAPS.md`.

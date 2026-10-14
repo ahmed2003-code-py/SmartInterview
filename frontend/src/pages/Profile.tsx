@@ -203,10 +203,10 @@ export default function Profile() {
           </div>
           <div className="mt-4 flex flex-col gap-4 text-center sm:flex-row sm:items-end sm:justify-between sm:text-start">
           <div className="min-w-0 flex-1">
-            <h1 className="t-page break-words" dir="auto">
+            <h1 className="t-page break-words [unicode-bidi:plaintext] max-sm:text-center sm:text-left sm:rtl:text-right">
               {user.name}
             </h1>
-            <p className="mt-1 text-[15px] text-muted" dir="auto">
+            <p className="mt-1 text-[15px] text-muted [unicode-bidi:plaintext] max-sm:text-center sm:text-left sm:rtl:text-right">
               {user.headline || <span className="text-subtle">{d.profile.addHeadline}</span>}
             </p>
             {focusLine.length > 0 && (
